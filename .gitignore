@@ -1,2 +1,4 @@
 build/
+_skbuild/
+hanabi_learning_environment.egg-info/
 *.pyc

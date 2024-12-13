@@ -1,8 +1,10 @@
-This is not an officially supported Google product.
+# Intro.
 
-hanabi\_learning\_environment is a research platform for Hanabi experiments. The file rl\_env.py provides an RL environment using an API similar to OpenAI Gym. A lower level game interface is provided in pyhanabi.py for non-RL methods like Monte Carlo tree search.
+This repo is based on [Google Hanabi Learning Env.](https://github.com/google-deepmind/hanabi-learning-environment).
 
-### Getting started
+# Getting started
+> From Google Hanabi Learning Env.
+
 Install the learning environment:
 ```
 sudo apt-get install g++            # if you don't already have a CXX compiler

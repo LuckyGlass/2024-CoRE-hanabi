@@ -1,11 +1,13 @@
 import torch
 from hanabi_learning_environment.pyhanabi import (
     HanabiCard,
-    HanabiObservation
+    HanabiObservation,
+    HanabiHistoryItem
 )
 from torch import nn
 from typing import List
 from .logic_solver import observation_solver
+from .utils import count_total_moves, move2id
 
 
 class CardKnowledgeEncoder(nn.Module):
@@ -93,3 +95,49 @@ class FireworkEncoder(nn.Module):
         firework = torch.tensor(firework, dtype=torch.long, device=self.device, requires_grad=False)
         firework_emb = nn.functional.one_hot(firework, self.num_ranks + 1)
         return firework_emb[:, :-1].flatten().float()
+
+
+class LastMovesEncoder(nn.Module):
+    def __init__(self, num_players: int, hand_size: int, num_colors: int, num_ranks: int, device: str, dim_move: int):
+        """
+        Args:
+            num_players (int):
+            hand_size (int):
+            num_colors (int):
+            num_ranks (int):
+            device (str):
+            dim_moves (int): the dimension of the history movement dimmension.
+        """
+        super().__init__()
+        self.num_players = num_players
+        self.num_colors = num_colors
+        self.num_ranks = num_ranks
+        self.hand_size = hand_size
+        self.count_total_moves = count_total_moves(num_players, num_colors, num_ranks, hand_size)
+        self.move_rnn = nn.LSTM(
+            input_size=num_players * self.count_total_moves,
+            hidden_size=dim_move,
+            num_layers=1,
+            batch_first=True,
+            device=device
+        )
+        self.device = device
+        self.h0 = nn.Parameter(torch.randn((1, dim_move), device=device, requires_grad=True))
+        self.c0 = nn.Parameter(torch.randn((1, dim_move), device=device, requires_grad=True))
+    
+    def forward(self, last_moves: List[HanabiHistoryItem], cur_player_offset: int):
+        if len(last_moves) == 0:
+            return self.h0
+        move_ids = []
+        for history in reversed(last_moves):
+            move = history.move()
+            move_id = move2id(move, self.num_players, self.num_colors, self.num_ranks, self.hand_size)
+            player = history.player()
+            if player >= cur_player_offset:
+                player -= cur_player_offset
+            else:
+                player = self.num_players + player - cur_player_offset
+            move_ids.append(player * self.count_total_moves + move_id)
+        move_ids = torch.tensor(move_ids, dtype=torch.long, device=self.device, requires_grad=False)
+        move_ids = nn.functional.one_hot(move_ids, num_classes=self.num_players * self.count_total_moves).float()
+        return self.move_rnn.forward(move_ids, (self.h0, self.c0))[0][-1]

@@ -1,10 +1,42 @@
 import torch
 from hanabi_learning_environment.pyhanabi import (
-    HanabiCard
+    HanabiCard,
+    HanabiObservation
 )
 from torch import nn
 from typing import List
-from .utils import count_total_cards
+from .logic_solver import observation_solver
+
+
+class CardKnowledgeEncoder(nn.Module):
+    """
+    Output a hard embedding of the given card knowledge.
+    Shape: #players x max_hand_size x #colors x #ranks
+    """
+    def __init__(self, num_players: int, num_colors: int, num_ranks: int, hand_size: int, device: str):
+        """
+        Args:
+            num_players (int):
+            hand_size (int): the max number of cards in a player's hand
+            device (str):
+        """
+        super().__init__()
+        self.device = device
+        self.num_players = num_players
+        self.num_colors = num_colors
+        self.num_ranks = num_ranks
+        self.hand_size = hand_size
+    
+    def forward(self, observation: HanabiObservation):
+        detailed_card_knowledge = observation_solver(observation, self.num_ranks, self.num_colors, self.num_players)
+        knowledge_emb = []
+        for player_knowledge in detailed_card_knowledge:
+            for card_knowledge in player_knowledge:
+                knowledge_emb.append(torch.tensor(card_knowledge.plausible, dtype=torch.float32, device=self.device, requires_grad=False))
+            for _ in range(self.hand_size - len(player_knowledge)):
+                knowledge_emb.append(torch.zeros((self.num_colors, self.num_ranks), dtype=torch.float32, device=self.device))
+        knowledge_emb = torch.stack(knowledge_emb)
+        return knowledge_emb.flatten()
 
 
 class DiscardPileEncoder(nn.Module):

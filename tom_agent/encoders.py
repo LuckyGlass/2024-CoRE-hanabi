@@ -7,7 +7,7 @@ from hanabi_learning_environment.pyhanabi import (
 from torch import nn
 from typing import List
 from .logic_solver import observation_solver
-from .utils import count_total_moves, move2id
+from .utils import count_total_moves, move2id, count_total_cards
 
 
 class CardKnowledgeEncoder(nn.Module):
@@ -39,6 +39,9 @@ class CardKnowledgeEncoder(nn.Module):
                 knowledge_emb.append(torch.zeros((self.num_colors, self.num_ranks), dtype=torch.float32, device=self.device))
         knowledge_emb = torch.stack(knowledge_emb)
         return knowledge_emb.flatten()
+
+    def dim(self):
+        return self.num_players * self.hand_size * self.num_colors * self.num_ranks
 
 
 class DiscardPileEncoder(nn.Module):
@@ -75,19 +78,24 @@ class DiscardPileEncoder(nn.Module):
         hard_emb = torch.tensor(hard_emb, dtype=torch.float32, requires_grad=False, device=self.device)
         return torch.concat((rnn_emb, hard_emb))
 
+    def dim(self):
+        return self.dim_discard + count_total_cards(self.num_colors, self.num_ranks)
+
 
 class FireworkEncoder(nn.Module):
     """
     Output a hard embedding of the current fireworks.
     Shape: (#colors x #ranks, )
     """
-    def __init__(self, num_ranks: int, device: str):
+    def __init__(self, num_colors: int, num_ranks: int, device: str):
         """
         Args:
+            num_colors (int):
             num_ranks (int):
             device (str):
         """
         super().__init__()
+        self.num_colors = num_colors
         self.num_ranks = num_ranks
         self.device = device
     
@@ -95,6 +103,9 @@ class FireworkEncoder(nn.Module):
         firework = torch.tensor(firework, dtype=torch.long, device=self.device, requires_grad=False)
         firework_emb = nn.functional.one_hot(firework, self.num_ranks + 1)
         return firework_emb[:, :-1].flatten().float()
+
+    def dim(self):
+        return self.num_ranks * self.num_colors
 
 
 class LastMovesEncoder(nn.Module):
@@ -121,6 +132,7 @@ class LastMovesEncoder(nn.Module):
             batch_first=True,
             device=device
         )
+        self.dim_move = dim_move
         self.device = device
         self.h0 = nn.Parameter(torch.randn((1, dim_move), device=device, requires_grad=True))
         self.c0 = nn.Parameter(torch.randn((1, dim_move), device=device, requires_grad=True))
@@ -142,6 +154,9 @@ class LastMovesEncoder(nn.Module):
         move_ids = nn.functional.one_hot(move_ids, num_classes=self.num_players * self.count_total_moves).float()
         return self.move_rnn.forward(move_ids, (self.h0, self.c0))[0][-1]
 
+    def dim(self):
+        return self.dim_move
+
 
 class TokenEncoder(nn.Module):
     def __init__(self, max_tokens: int, device: str):
@@ -158,3 +173,6 @@ class TokenEncoder(nn.Module):
         else:
             cur_token = torch.tensor([cur_token - 1], dtype=torch.long, device=self.device, requires_grad=False)
             return nn.functional.one_hot(cur_token, num_classes=self.max_tokens).float()
+
+    def dim(self):
+        return self.max_tokens

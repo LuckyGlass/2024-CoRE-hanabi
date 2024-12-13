@@ -70,11 +70,11 @@ class DetailedCardKnowledge:
         return ''.join(f'{ID2COLOR[i]}:' + ''.join(str(j + 1) for j, b in enumerate(arr) if b) + '|' for i, arr in enumerate(self.plausible))
 
 
-def observation_solver(observation: HanabiObservation, max_rank: int, num_colors: int, num_players: int) -> List[List[DetailedCardKnowledge]]:
+def observation_solver(observation: HanabiObservation, num_ranks: int, num_colors: int, num_players: int) -> List[List[DetailedCardKnowledge]]:
     """The logic solver for the card information.
     Args:
         observation (HanabiObservation): The observation of the current player provided by the env.
-        max_rank (int): The maximum rank of the cards.
+        num_ranks (int): The maximum rank of the cards.
         num_colors (int): The number of colors.
         num_players (int): The number of players.
     Returns:
@@ -84,15 +84,15 @@ def observation_solver(observation: HanabiObservation, max_rank: int, num_colors
     discard_pile: List[HanabiCard] = observation.discard_pile()
     observed_hands: List[List[HanabiCard]] = observation.observed_hands()
     card_knowledge: List[List[HanabiCardKnowledge]] = observation.card_knowledge()
-    public_remaining_cards = [0 for _ in range(1 << (num_colors + max_rank))]
+    public_remaining_cards = [0 for _ in range(1 << (num_colors + num_ranks))]
     for colorset in range(1 << num_colors):
-        for rankset in range(1 << max_rank):
-            public_remaining_cards[(colorset << max_rank) | rankset] = MAX_NUM_CARDS[rankset] * MAX_NUM_COLORS[colorset]
+        for rankset in range(1 << num_ranks):
+            public_remaining_cards[(colorset << num_ranks) | rankset] = MAX_NUM_CARDS[rankset] * MAX_NUM_COLORS[colorset]
     for color in range(num_colors):
         for rank in range(fireworks[color]):
-            modify_superset(num_colors + max_rank, (1 << (color + max_rank)) | (1 << rank), -1, public_remaining_cards)
+            modify_superset(num_colors + num_ranks, (1 << (color + num_ranks)) | (1 << rank), -1, public_remaining_cards)
     for card in discard_pile:
-        modify_superset(num_colors + max_rank, (1 << (card.color() + max_rank)) | (1 << card.rank()), -1, public_remaining_cards)
+        modify_superset(num_colors + num_ranks, (1 << (card.color() + num_ranks)) | (1 << card.rank()), -1, public_remaining_cards)
     detailed_knowledge = []
     for playeri in range(num_players):
         private_detailed_knowledge = []
@@ -100,15 +100,15 @@ def observation_solver(observation: HanabiObservation, max_rank: int, num_colors
         for playerj in range(1, num_players):  # ignore +0
             if playeri != playerj:
                 for card in observed_hands[playerj]:
-                    modify_superset(num_colors + max_rank, (1 << (card.color() + max_rank)) | (1 << card.rank()), -1, private_remaining_cards)
+                    modify_superset(num_colors + num_ranks, (1 << (card.color() + num_ranks)) | (1 << card.rank()), -1, private_remaining_cards)
         for knowledge in card_knowledge[playeri]:
-            colorset, rankset = get_bit_knowledge(knowledge, num_colors, max_rank)
-            modify_superset(num_colors + max_rank, (colorset << max_rank) | rankset, -1, private_remaining_cards)
+            colorset, rankset = get_bit_knowledge(knowledge, num_colors, num_ranks)
+            modify_superset(num_colors + num_ranks, (colorset << num_ranks) | rankset, -1, private_remaining_cards)
         for knowledge in card_knowledge[playeri]:
             card_remaining_cards = deepcopy(private_remaining_cards)
-            colorset, rankset = get_bit_knowledge(knowledge, num_colors, max_rank)
-            modify_superset(num_colors + max_rank, (colorset << max_rank) | rankset, 1, card_remaining_cards)
-            passdown(num_colors + max_rank, card_remaining_cards)
-            private_detailed_knowledge.append(DetailedCardKnowledge.deduce(knowledge, card_remaining_cards, num_colors, max_rank))
+            colorset, rankset = get_bit_knowledge(knowledge, num_colors, num_ranks)
+            modify_superset(num_colors + num_ranks, (colorset << num_ranks) | rankset, 1, card_remaining_cards)
+            passdown(num_colors + num_ranks, card_remaining_cards)
+            private_detailed_knowledge.append(DetailedCardKnowledge.deduce(knowledge, card_remaining_cards, num_colors, num_ranks))
         detailed_knowledge.append(private_detailed_knowledge)
     return detailed_knowledge

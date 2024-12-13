@@ -2,10 +2,14 @@ from __future__ import print_function
 from hanabi_learning_environment import pyhanabi
 from tom_agent.logic_solver import observation_solver
 from tom_agent.utils import ID2COLOR
-from tom_agent.encoders import DiscardPileEncoder, CardKnowledgeEncoder
+from tom_agent.encoders import (
+    DiscardPileEncoder,
+    CardKnowledgeEncoder,
+    FireworkEncoder
+)
 
 
-def run_game(players: int=2, colors: int=4, rank: int=5, hand_size: int=4, max_information_tokens: int=8, seed: int=-1, random_start_player: bool=False):
+def run_game(players: int=2, colors: int=4, ranks: int=5, hand_size: int=4, max_information_tokens: int=8, seed: int=-1, random_start_player: bool=False):
     """
     Play a game, selecting random actions.
     
@@ -21,18 +25,19 @@ def run_game(players: int=2, colors: int=4, rank: int=5, hand_size: int=4, max_i
     game_config = {
         'players': players,
         'colors': colors,
-        'rank': rank,
+        'ranks': ranks,
         'hand_size': hand_size,
         'max_information_tokens': max_information_tokens,
         'seed': seed,
-        'random_start_player': random_start_player
+        'random_start_player': random_start_player,
+        'dddd': 0
     }
     game = pyhanabi.HanabiGame(game_config)
     print(game.parameter_string(), end="")
     
     state = game.new_initial_state()
-    discard_encoder = DiscardPileEncoder(num_colors=colors, num_ranks=rank, dim_discard=10, device='cuda')
-    card_knowledge_encoder = CardKnowledgeEncoder(num_players=players, num_colors=colors, num_ranks=rank, hand_size=hand_size, device='cuda')
+    discard_encoder = DiscardPileEncoder(colors, ranks, 10, device='cuda')
+    firework_encoder = FireworkEncoder(ranks, 'cuda')
     while not state.is_terminal():
         if state.cur_player() == pyhanabi.CHANCE_PLAYER_ID:
             state.deal_random_card()
@@ -41,10 +46,12 @@ def run_game(players: int=2, colors: int=4, rank: int=5, hand_size: int=4, max_i
         import time
         st_time = time.time()
         observation = state.observation(state.cur_player())
-        detailed_knowledge = observation_solver(observation, rank, colors, players)
+        detailed_knowledge = observation_solver(observation, ranks, colors, players)
         print("Timecost =", time.time() - st_time)
         print('-' * 20)
         print(f"Fireworks:", ' '.join(f'{ID2COLOR[i]}{c}' for i, c in enumerate(observation.fireworks())))
+        firework_emb = firework_encoder.forward(observation.fireworks())
+        print(firework_emb)
         print(f"Discard:", ' '.join(f'{ID2COLOR[card.color()]}{card.rank()}' for card in observation.discard_pile()))
         discard_emb = discard_encoder.forward(observation.discard_pile())
         print(discard_emb)
@@ -68,4 +75,4 @@ if __name__ == "__main__":
     # Check that the cdef and library were loaded from the standard paths.
     assert pyhanabi.cdef_loaded(), "cdef failed to load"
     assert pyhanabi.lib_loaded(), "lib failed to load"
-    run_game(players=2, colors=4, rank=5, hand_size=5, random_start_player=True)
+    run_game(players=2, colors=4, ranks=2, hand_size=2, random_start_player=True)

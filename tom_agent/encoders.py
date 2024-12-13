@@ -72,3 +72,24 @@ class DiscardPileEncoder(nn.Module):
                     hard_emb += [1] * temp_count[c][r] + [0] * (2 - temp_count[c][r])
         hard_emb = torch.tensor(hard_emb, dtype=torch.float32, requires_grad=False, device=self.device)
         return torch.concat((rnn_emb, hard_emb))
+
+
+class FireworkEncoder(nn.Module):
+    """
+    Output a hard embedding of the current fireworks.
+    Shape: (#colors x #ranks, )
+    """
+    def __init__(self, num_ranks: int, device: str):
+        """
+        Args:
+            num_ranks (int):
+            device (str):
+        """
+        super().__init__()
+        self.num_ranks = num_ranks
+        self.device = device
+    
+    def forward(self, firework: List[int]):
+        firework = torch.tensor(firework, dtype=torch.long, device=self.device, requires_grad=False)
+        firework_emb = nn.functional.one_hot(firework, self.num_ranks + 1)
+        return firework_emb[:, :-1].flatten().float()

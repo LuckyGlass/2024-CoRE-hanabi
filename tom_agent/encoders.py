@@ -141,3 +141,20 @@ class LastMovesEncoder(nn.Module):
         move_ids = torch.tensor(move_ids, dtype=torch.long, device=self.device, requires_grad=False)
         move_ids = nn.functional.one_hot(move_ids, num_classes=self.num_players * self.count_total_moves).float()
         return self.move_rnn.forward(move_ids, (self.h0, self.c0))[0][-1]
+
+
+class TokenEncoder(nn.Module):
+    def __init__(self, max_tokens: int, device: str):
+        """
+        Args:
+            max_tokens (int): the maximum number of information tokens
+        """
+        self.max_tokens = max_tokens
+        self.device = device
+    
+    def forward(self, cur_token: int):
+        if cur_token == 0:
+            return torch.zeros(self.max_tokens, dtype=torch.float32, device=self.device)
+        else:
+            cur_token = torch.tensor([cur_token - 1], dtype=torch.long, device=self.device, requires_grad=False)
+            return nn.functional.one_hot(cur_token, num_classes=self.max_tokens).float()

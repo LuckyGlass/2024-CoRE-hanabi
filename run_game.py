@@ -6,7 +6,8 @@ from tom_agent.encoders import (
     DiscardPileEncoder,
     CardKnowledgeEncoder,
     FireworkEncoder,
-    LastMovesEncoder
+    LastMovesEncoder,
+    TokenEncoder
 )
 
 
@@ -40,6 +41,7 @@ def run_game(players: int=2, colors: int=4, ranks: int=5, hand_size: int=4, max_
     discard_encoder = DiscardPileEncoder(colors, ranks, 10, device='cuda')
     firework_encoder = FireworkEncoder(ranks, 'cuda')
     last_moves_encoder = LastMovesEncoder(players, hand_size, colors, ranks, 'cuda', 10)
+    info_token_encoder = TokenEncoder(max_information_tokens, 'cuda')
     while not state.is_terminal():
         if state.cur_player() == pyhanabi.CHANCE_PLAYER_ID:
             state.deal_random_card()
@@ -61,6 +63,7 @@ def run_game(players: int=2, colors: int=4, ranks: int=5, hand_size: int=4, max_
         print('-' * 20)
         print('\n'.join(map(str, observation.last_moves())))
         print(last_moves_encoder.forward(observation.last_moves(), observation.cur_player_offset()))
+        print(info_token_encoder.forward(observation.information_tokens()))
         print('-' * 20)
         observed_hands = observation.observed_hands()
         for a, b in zip(observed_hands, detailed_knowledge):

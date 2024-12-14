@@ -1,0 +1,25 @@
+python start_train.py \
+    --device cuda \
+    --emb_dim_belief 10 \
+    --emb_dim_discard 10 \
+    --emb_dim_history 10 \
+    --num_intention 2 \
+    --hidden_dim_actor 10 \
+    --hidden_dim_critic 10 \
+    --hidden_dim_tom 10 \
+    --hidden_dim_update 10 \
+    --num_colors 3 \
+    --num_ranks 2 \
+    --num_players 2 \
+    --hand_size 2 \
+    --max_information_token 4 \
+    --discount_factor 0.9 \
+    --clip_epsilon 0.1 \
+    --learning_rate_actor 1e-4 \
+    --learning_rate_critic 1e-3 \
+    --learning_rate_encoder 1e-4 \
+    --learning_rate_update 1e-4 \
+    --num_training_epochs 2 \
+    --max_training_timesteps 20 \
+    --max_episode_length 10 \
+    --update_interval 2

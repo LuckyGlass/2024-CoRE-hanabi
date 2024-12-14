@@ -11,15 +11,13 @@ from .utils import count_total_moves, move2id, count_total_cards
 
 
 class CardKnowledgeEncoder(nn.Module):
-    """
-    Output a hard embedding of the given card knowledge.
-    Shape: #players x max_hand_size x #colors x #ranks
-    """
-    def __init__(self, num_players: int, num_colors: int, num_ranks: int, hand_size: int, device: str):
+    def __init__(self, num_players: int, num_colors: int, num_ranks: int, hand_size: int, device: str, **_):
         """
         Args:
             num_players (int):
-            hand_size (int): the max number of cards in a player's hand
+            num_colors (int):
+            num_ranks (int):
+            hand_size (int):
             device (str):
         """
         super().__init__()
@@ -45,18 +43,25 @@ class CardKnowledgeEncoder(nn.Module):
 
 
 class DiscardPileEncoder(nn.Module):
-    def __init__(self, num_colors: int, num_ranks: int, dim_discard: int, device: str):
+    def __init__(self, num_colors: int, num_ranks: int, emb_dim_discard: int, device: str, **_):
+        """
+        Args:
+            num_colors (int):
+            num_ranks (int):
+            emb_dim_discard (int):
+            device (str):
+        """
         super().__init__()
-        self.rnn_encoder = nn.LSTM(num_colors * num_ranks, dim_discard, num_layers=1, batch_first=True, device=device)
+        self.rnn_encoder = nn.LSTM(num_colors * num_ranks, emb_dim_discard, num_layers=1, batch_first=True, device=device)
         self.num_colors = num_colors
         self.num_ranks = num_ranks
         self.device = device
-        self.dim_discard = dim_discard
+        self.emb_dim_discard = emb_dim_discard
     
     def forward(self, discard_pile: List[HanabiCard]):
         # Get RNN Embedding
         if len(discard_pile) == 0:
-            rnn_emb = torch.zeros(self.dim_discard, dtype=torch.float32, device=self.device)
+            rnn_emb = torch.zeros(self.emb_dim_discard, dtype=torch.float32, device=self.device)
         else:
             card_ids = [card.color() * self.num_ranks + card.rank() for card in discard_pile]
             card_ids = torch.tensor(card_ids, dtype=torch.long, device=self.device, requires_grad=False)
@@ -79,15 +84,11 @@ class DiscardPileEncoder(nn.Module):
         return torch.concat((rnn_emb, hard_emb))
 
     def dim(self):
-        return self.dim_discard + count_total_cards(self.num_colors, self.num_ranks)
+        return self.emb_dim_discard + count_total_cards(self.num_colors, self.num_ranks)
 
 
 class FireworkEncoder(nn.Module):
-    """
-    Output a hard embedding of the current fireworks.
-    Shape: (#colors x #ranks, )
-    """
-    def __init__(self, num_colors: int, num_ranks: int, device: str):
+    def __init__(self, num_colors: int, num_ranks: int, device: str, **_):
         """
         Args:
             num_colors (int):
@@ -109,15 +110,15 @@ class FireworkEncoder(nn.Module):
 
 
 class LastMovesEncoder(nn.Module):
-    def __init__(self, num_players: int, hand_size: int, num_colors: int, num_ranks: int, device: str, dim_move: int):
+    def __init__(self, num_players: int, hand_size: int, num_colors: int, num_ranks: int, emb_dim_history: int, device: str, **_):
         """
         Args:
             num_players (int):
             hand_size (int):
             num_colors (int):
             num_ranks (int):
+            emb_dim_history (int): The dimension of the embeddings of history movements.
             device (str):
-            dim_moves (int): the dimension of the history movement dimmension.
         """
         super().__init__()
         self.num_players = num_players
@@ -127,15 +128,15 @@ class LastMovesEncoder(nn.Module):
         self.count_total_moves = count_total_moves(num_players, num_colors, num_ranks, hand_size)
         self.move_rnn = nn.LSTM(
             input_size=num_players * self.count_total_moves,
-            hidden_size=dim_move,
+            hidden_size=emb_dim_history,
             num_layers=1,
             batch_first=True,
             device=device
         )
-        self.dim_move = dim_move
+        self.emb_dim_history = emb_dim_history
         self.device = device
-        self.h0 = nn.Parameter(torch.randn((1, dim_move), device=device, requires_grad=True))
-        self.c0 = nn.Parameter(torch.randn((1, dim_move), device=device, requires_grad=True))
+        self.h0 = nn.Parameter(torch.randn((1, emb_dim_history), device=device, requires_grad=True))
+        self.c0 = nn.Parameter(torch.randn((1, emb_dim_history), device=device, requires_grad=True))
     
     def forward(self, last_moves: List[HanabiHistoryItem], cur_player_offset: int):
         if len(last_moves) == 0:
@@ -155,7 +156,7 @@ class LastMovesEncoder(nn.Module):
         return self.move_rnn.forward(move_ids, (self.h0, self.c0))[0][-1]
 
     def dim(self):
-        return self.dim_move
+        return self.emb_dim_history
 
 
 class TokenEncoder(nn.Module):

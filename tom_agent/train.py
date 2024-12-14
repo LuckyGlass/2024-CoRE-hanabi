@@ -4,7 +4,7 @@ from hanabi_learning_environment.pyhanabi import (
     HanabiState,
     CHANCE_PLAYER_ID
 )
-from typing import Optional, List
+from typing import Optional, List, Dict, Union
 from .PPO import PPOAgent
 from .reward import compute_reward
 from .encoders import (
@@ -19,47 +19,52 @@ from .utils import count_total_moves
 
 
 class HanabiPPOAgentWrapper:
-    def __init__(self, ppo_agent: PPOAgent, num_players: int, num_colors: int, num_ranks: int, hand_size: int, max_information_token: int, dim_discard: int, dim_move: int, dim_belief: int, dim_belief_update: int, dim_tom: int, num_intention: int, device: str, do_train: bool=True, lr_encoder: Optional[float]=None):
+    def __init__(self, max_information_token: int, learning_rate_encoder: float, **kwargs):
         """
         Args:
-            ppo_agent (PPOAgent): an instance of `PPOAgent`.
-            num_players (int):
-            num_colors (int):
-            num_ranks (int):
-            hand_size (int):
-            max_information_token (int):
-            dim_discard (int): the dimension of the RNN-embedding of discard piles.
-            dim_move (int): the dimension of the embedding of history movements.
-            dim_belief (int): the dimension of the embedding of believes.
-            dim_belief_update (int): the hidden dimension of the updater of believes.
-            dim_tom (int): the hidden dimension of the ToM module.
-            num_intention (int): the number of types of intention.
+            clip_epsilon (float):
             device (str):
-            do_train (Optional, bool): whether to train the module.
+            discount_factor (float):
+            emb_dim_belief (int): The dimension of the embeddings of believes.
+            emb_dim_discard (int): The dimension of the RNN-embeddings of discarded cards; it also uses a hard embedding of discard piles.
+            emb_dim_history (int): The dimension of the embeddings of history movements.
+            emb_dim_state (int): The dimension of the embeddings of states.
+            hand_size (int):
+            hidden_dim_actor (int): It decides the width of the Actor module.
+            hidden_dim_critic (int): It decides the width of the Critic module.
+            hidden_dim_tom (int): It decides the width of the ToM module.
+            hidden_dim_update (int): It decides the width of the belief-update module.
+            learning_rate_actor (float): The learning rate to train the Actor module.
+            learning_rate_critic (float): The learning rate to train the Critic module.
+            learning_rate_encoder (float): The learning rate to train the DiscardPileEncoder and the LastMovesEncoder.
+            max_information_token (int):
+            num_colors (int):
+            num_intention (int): The number of the types of intentions.
+            num_moves (int): The number of types of actions.
+            num_players (int):
+            num_ranks (int):
+            num_training_epochs (int): The number of epochs to train the policy model per updating step.
         """
-        self.ppo_agent = ppo_agent
-        self.num_players = num_players
-        self.num_colors = num_colors
-        self.num_ranks = num_ranks
-        self.card_knowledge_encoder = CardKnowledgeEncoder(num_players, num_colors, num_ranks, hand_size, device)
-        self.discard_pile_encoder = DiscardPileEncoder(num_colors, num_ranks, dim_discard, device)
-        self.firework_encoder = FireworkEncoder(num_ranks, device)
-        self.last_moves_encoder = LastMovesEncoder(num_players, hand_size, num_colors, num_ranks, device, dim_move)
-        self.info_token_encoder = TokenEncoder(max_information_token, device)
+        self.ppo_agent = PPOAgent(**kwargs)
+        self.card_knowledge_encoder = CardKnowledgeEncoder(**kwargs)
+        self.discard_pile_encoder = DiscardPileEncoder(**kwargs)
+        self.firework_encoder = FireworkEncoder(**kwargs)
+        self.last_moves_encoder = LastMovesEncoder(**kwargs)
+        self.info_token_encoder = TokenEncoder(max_information_token, kwargs['device'])
+        self.update_self_belief = BeliefUpdateModule(**kwargs)
+        self.update_other_belief = BeliefUpdateModule(**kwargs)
+        self.tom = ToMModule(**kwargs)
+        self.num_players = kwargs['num_players']
+        self.num_colors = kwargs['num_colors']
+        self.num_ranks = kwargs['num_ranks']
+        self.num_moves = kwargs['num_moves']
         self.dim_state = self.card_knowledge_encoder.dim() + self.discard_pile_encoder.dim() + self.firework_encoder.dim() + self.last_moves_encoder.dim() + self.info_token_encoder.dim()
-        self.num_move = count_total_moves(num_players, num_colors, num_ranks, hand_size)
-        self.update_self_belief = BeliefUpdateModule(dim_belief, self.dim_state, self.num_move, dim_belief_update, device)
-        self.update_other_belief = BeliefUpdateModule(dim_belief, self.dim_state, self.num_move, dim_belief_update, device)
-        self.tom = ToMModule(self.dim_state, self.num_move, num_intention, dim_belief, dim_tom, device=device)
-        if do_train:
-            self.optimizer = torch.optim.AdamW([
-                {'params': self.discard_pile_encoder.parameters(), 'lr': lr_encoder},
-                {'params': self.last_moves_encoder.parameters(), 'lr': lr_encoder}
-            ])
-            self.optimizer.zero_grad()
-        else:
-            self.optimizer = None
-        self.device = device
+        self.optimizer = torch.optim.AdamW([
+            {'params': self.discard_pile_encoder.parameters(), 'lr': learning_rate_encoder},
+            {'params': self.last_moves_encoder.parameters(), 'lr': learning_rate_encoder}
+        ])
+        self.optimizer.zero_grad()
+        self.device = kwargs['device']
     
     def encode_state(self, state: HanabiState):
         observation = state.observation(state.cur_player())
@@ -111,7 +116,7 @@ class HanabiPPOAgentWrapper:
         result_state = result_state.repeat((batch_size, 1))
         gt_intention = torch.distributions.Categorical(gt_intention.repeat(batch_size, 1))
         action = torch.tensor([action] * batch_size, dtype=torch.long, device=self.device)
-        action = torch.nn.functional.one_hot(action, num_classes=self.num_move).float()
+        action = torch.nn.functional.one_hot(action, num_classes=self.num_moves).float()
         pred_intention, pred_belief = self.tom.forward(initial_state, result_state, others_belief, action)
         loss_belief_fn = torch.nn.MSELoss(reduction='sum')
         loss_belief = loss_belief_fn(pred_belief, gt_belief) / batch_size
@@ -122,23 +127,66 @@ class HanabiPPOAgentWrapper:
         loss_intention.backward()
 
 
-def train(game: HanabiGame, ppo_agent: PPOAgent, max_training_timesteps: int, max_episode_len: int, update_timesteps: int, dim_discard: int, dim_move: int):
-    """PPO training.
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, emb_dim_discard: int, emb_dim_history: int, emb_dim_state: int, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, **_):
+    """
     Args:
-        game (HanabiGame): the game starter.
-        ppo_agent (PPOAgent): the agent to train.
-        max_training_timesteps (int): max number of actions taken.
-        max_episode_len (int): max number of actions taken in one episode; -1 means unlimited.
-        update_timesteps (int): the number of timesteps between update.
+        clip_epsilon (float):
+        device (str):
+        discount_factor (float):
+        emb_dim_belief (int): The dimension of the embeddings of believes.
+        emb_dim_discard (int): The dimension of the RNN-embeddings of discarded cards; it also uses a hard embedding of discard piles.
+        emb_dim_history (int): The dimension of the embeddings of history movements.
+        emb_dim_state (int): The dimension of the embeddings of states.
+        hand_size (int):
+        hidden_dim_actor (int): It decides the width of the Actor module.
+        hidden_dim_critic (int): It decides the width of the Critic module.
+        hidden_dim_tom (int): It decides the width of the ToM module.
+        hidden_dim_update (int): It decides the width of the belief-update module.
+        learning_rate_actor (float): The learning rate to train the Actor module.
+        learning_rate_critic (float): The learning rate to train the Critic module.
+        learning_rate_encoder (float): The learning rate to train the DiscardPileEncoder and the LastMovesEncoder.
+        max_episode_length (int): The maximum length of an episode.
+        max_information_token (int):
+        max_training_timesteps (int): The maximum number of actions throughout the training process.
+        num_colors (int):
+        num_intention (int): The number of the types of intentions.
+        num_moves (int): The number of types of actions.
+        num_players (int):
+        num_ranks (int):
+        num_training_epochs (int): The number of epochs to train the policy model per updating step.
+        update_interval (int): The interval (timesteps) between two updating steps.
     """
     global_time_steps = 0
-    hanabi_agent = HanabiPPOAgentWrapper(ppo_agent, game.num_players(), game.num_colors(), game.num_ranks(), game.hand_size(), game.max_information_tokens(), dim_discard, dim_move)
+    hanabi_agent = HanabiPPOAgentWrapper(
+        clip_epsilon=clip_epsilon,
+        device=device,
+        discount_factor=discount_factor,
+        emb_dim_belief=emb_dim_belief,
+        emb_dim_discard=emb_dim_discard,
+        emb_dim_history=emb_dim_history,
+        emb_dim_state=emb_dim_state,
+        hand_size=hand_size,
+        hidden_dim_actor=hidden_dim_actor,
+        hidden_dim_critic=hidden_dim_critic,
+        hidden_dim_tom=hidden_dim_tom,
+        hidden_dim_update=hidden_dim_update,
+        learning_rate_actor=learning_rate_actor,
+        learning_rate_critic=learning_rate_critic,
+        learning_rate_encoder=learning_rate_encoder,
+        max_information_token=max_information_token,
+        num_colors=num_colors,
+        num_intention=num_intention,
+        num_moves=num_moves,
+        num_players=num_players,
+        num_ranks=num_ranks,
+        num_training_epochs=num_training_epochs,
+    )
     while global_time_steps <= max_training_timesteps:
         state = game.new_initial_state()
-        believes: torch.Tensor = torch.zeros((game.num_players(), None))  # TODO
+        believes: torch.Tensor = torch.zeros((game.num_players(), emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
         episode_time_steps = 0
         episode_total_reward = 0
-        while max_episode_len == -1 or episode_time_steps < max_episode_len:
+        while max_episode_length == -1 or episode_time_steps < max_episode_length:
             if state.cur_player() == CHANCE_PLAYER_ID:
                 state.deal_random_card()
                 continue
@@ -161,7 +209,7 @@ def train(game: HanabiGame, ppo_agent: PPOAgent, max_training_timesteps: int, ma
             episode_time_steps += 1
             episode_total_reward += reward
             # Update PPO agent
-            if global_time_steps % update_timesteps == 0:
+            if global_time_steps % update_interval == 0:
                 hanabi_agent.update()
             # Terminal
             if done:

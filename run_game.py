@@ -32,7 +32,6 @@ def run_game(players: int=2, colors: int=4, ranks: int=5, hand_size: int=4, max_
         'max_information_tokens': max_information_tokens,
         'seed': seed,
         'random_start_player': random_start_player,
-        'dddd': 0
     }
     game = pyhanabi.HanabiGame(game_config)
     print(game.parameter_string(), end="")

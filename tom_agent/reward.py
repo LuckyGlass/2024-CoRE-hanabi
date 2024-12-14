@@ -1,2 +1,2 @@
 def compute_reward():
-    pass  # TODO
+    return 0  # TODO

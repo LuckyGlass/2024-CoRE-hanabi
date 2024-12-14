@@ -4,7 +4,7 @@ from hanabi_learning_environment.pyhanabi import (
     HanabiMove
 )
 from torch import nn
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Union
 from .models import ActorModule, CriticModule
 
 
@@ -29,10 +29,20 @@ class RolloutBuffer:
 
 
 class ActorCriticModule(nn.Module):
-    def __init__(self, dim_state: int, dim_belief: int, dim_action: int, num_intention: int, actor_hidden_dim: int, critic_hidden_dim: int, device: str):
+    def __init__(self, **kwargs):
+        """
+        Args:
+            emb_dim_state (int): The dimension of the embeddings of states.
+            emb_dim_belief (int): The dimension of the embeddings of believes.
+            num_moves (int): The number of types of actions.
+            num_intention (int): The number of the types of intentions.
+            hidden_dim_actor (int): It decides the width of the Actor module.
+            hidden_dim_critic (int): It decides the width of the Critic module.
+            device (str):
+        """
         super().__init__()
-        self.actor = ActorModule(dim_state, dim_belief, dim_action, actor_hidden_dim, num_intention, device)
-        self.critic = CriticModule(dim_state, critic_hidden_dim, device)
+        self.actor = ActorModule(**kwargs)
+        self.critic = CriticModule(**kwargs)
     
     def evaluate(self, states: torch.Tensor, believes: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         action_probs, _ = self.actor.forward(states, believes)
@@ -55,34 +65,33 @@ class ActorCriticModule(nn.Module):
 
 
 class PPOAgent:
-    def __init__(self, model_config: Dict[str, int], discount_factor: float, clip_epsilon: float, learning_rate_actor: float, learning_rate_critic: float, device: str, num_epochs: int):
+    def __init__(self, discount_factor: float, clip_epsilon: float, num_training_epochs: int, learning_rate_actor: float, learning_rate_critic: float, **kwargs):
         """
         Args:
-            model_config (Dict[str, int]): the config of the Actor-Critic module.
-                - `dim_state`: the dimension of state embeddings.
-                - `dim_belief`: the dimension of belief embeddings.
-                - `dim_action`: the number of types of actions.
-                - `num_intention`: the number of types of intentions.
-                - `actor_hidden_dim`: it decides the model width of the Actor model.
-                - `critic_hidden_dim`: it decides the model width of the Critic model.
             discount_factor (float):
             clip_epsilon (float):
+            num_training_epochs (int): The number of epochs to train the policy model per updating step.
+            learning_rate_actor (float): The learning rate to train the Actor module.
+            learning_rate_critic (float): The learning rate to train the Critic module.
+            emb_dim_state (int): The dimension of the embeddings of states.
+            emb_dim_belief (int): The dimension of the embeddings of believes.
+            num_moves (int): The number of types of actions.
+            num_intention (int): The number of the types of intentions.
+            hidden_dim_actor (int): It decides the width of the Actor module.
+            hidden_dim_critic (int): It decides the width of the Critic module.
             device (str):
-            learning_rate_actor (float): the learning rate to train the actor module.
-            learning_rate_critic (float): the learning rate to train the critic module.
-            num_epochs (int): the number of epochs to train the policy model.
         """
         self.buffer = RolloutBuffer()
-        self.policy = ActorCriticModule(**model_config)
+        self.policy = ActorCriticModule(**kwargs)
         self.discount_factor = discount_factor
         self.clip_epsilon = clip_epsilon
-        self.device = device
-        self.num_epochs = num_epochs
+        self.device = kwargs['device']
+        self.num_training_epochs = num_training_epochs
         self.optimizer = torch.optim.AdamW([
             {'params': self.policy.actor.parameters(), 'lr': learning_rate_actor},
             {'params': self.policy.critic.parameters(), 'lr': learning_rate_critic}
         ])
-        self.policy_old = ActorCriticModule(**model_config)
+        self.policy_old = ActorCriticModule(**kwargs)
         self.policy_old.load_state_dict(self.policy.state_dict())
     
     @torch.no_grad()
@@ -116,7 +125,7 @@ class PPOAgent:
         mse_loss_fn = nn.MSELoss()
         
         # Optimize
-        for _ in range(self.num_epochs):
+        for _ in range(self.num_training_epochs):
             # Compute new value functions
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_believes, old_actions)
             state_values = None

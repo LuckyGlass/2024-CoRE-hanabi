@@ -4,8 +4,9 @@ from hanabi_learning_environment.pyhanabi import (
     HanabiMove
 )
 from torch import nn
-from typing import Tuple, Dict, Union
+from typing import Tuple, Dict, Union, List
 from .models import ActorModule, CriticModule
+from .utils import move2id
 
 
 class RolloutBuffer:
@@ -29,13 +30,17 @@ class RolloutBuffer:
 
 
 class ActorCriticModule(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, num_players: int, num_colors: int, num_ranks: int, hand_size: int, **kwargs):
         """
         Args:
             emb_dim_state (int): The dimension of the embeddings of states.
             emb_dim_belief (int): The dimension of the embeddings of believes.
+            num_colors (int): The number of colors.
             num_moves (int): The number of types of actions.
             num_intention (int): The number of the types of intentions.
+            num_players (int): The number of players.
+            num_ranks (int): The number of ranks.
+            hand_size (int): The maximum number of cards in a player's hands.
             hidden_dim_actor (int): It decides the width of the Actor module.
             hidden_dim_critic (int): It decides the width of the Critic module.
             device (str):
@@ -43,6 +48,10 @@ class ActorCriticModule(nn.Module):
         super().__init__()
         self.actor = ActorModule(**kwargs)
         self.critic = CriticModule(**kwargs)
+        self.num_players = num_players
+        self.num_colors = num_colors
+        self.num_ranks = num_ranks
+        self.hand_size = hand_size
     
     def evaluate(self, states: torch.Tensor, believes: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         action_probs, _ = self.actor.forward(states, believes)
@@ -53,15 +62,20 @@ class ActorCriticModule(nn.Module):
         return action_logprobs, state_values, dist_entropy
 
     @torch.no_grad()
-    def act(self, state: torch.Tensor, belief: torch.Tensor) -> Tuple[torch.LongTensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def act(self, state: torch.Tensor, belief: torch.Tensor, valid_moves: List[HanabiMove]) -> Tuple[int, float, float, torch.Tensor]:
         state = state.unsqueeze(0)
         belief = belief.unsqueeze(0)
         action_probs, intention_probs = self.actor.forward(state, belief)
+        action_probs = action_probs.flatten()
+        valid_mask = torch.zeros_like(action_probs, dtype=torch.bool)
+        valid_move_ids = [move2id(m, self.num_players, self.num_colors, self.num_ranks, self.hand_size) for m in valid_moves]
+        valid_mask[valid_move_ids] = 1
+        action_probs = torch.where(valid_mask, action_probs, 0) / torch.sum(action_probs[valid_move_ids])
         dist = torch.distributions.Categorical(action_probs)
         action = dist.sample()
         action_logprob = dist.log_prob(action)
         state_val = self.critic.forward(state)
-        return action, action_logprob, state_val, intention_probs
+        return action.item(), action_logprob.item(), state_val.item(), intention_probs
 
 
 class PPOAgent:
@@ -77,6 +91,9 @@ class PPOAgent:
             emb_dim_belief (int): The dimension of the embeddings of believes.
             num_moves (int): The number of types of actions.
             num_intention (int): The number of the types of intentions.
+            num_players (int): The number of players.
+            num_ranks (int): The number of ranks.
+            hand_size (int): The maximum number of cards in a player's hands.
             hidden_dim_actor (int): It decides the width of the Actor module.
             hidden_dim_critic (int): It decides the width of the Critic module.
             device (str):
@@ -93,34 +110,40 @@ class PPOAgent:
         ])
         self.policy_old = ActorCriticModule(**kwargs)
         self.policy_old.load_state_dict(self.policy.state_dict())
+        self.num_players = kwargs['num_players']
+        self.num_colors = kwargs['num_colors']
+        self.num_ranks = kwargs['num_ranks']
+        self.hand_size = kwargs['hand_size']
     
     @torch.no_grad()
-    def select_action(self, state: torch.Tensor, belief: torch.Tensor) -> Tuple[int, torch.Tensor]:
+    def select_action(self, state: torch.Tensor, belief: torch.Tensor, valid_moves: List[HanabiMove]) -> Tuple[HanabiMove, torch.Tensor]:
         state = state.to(self.device)
-        action, action_logprob, state_val, intention_prob = self.policy_old.act(state, belief)
+        action_id, action_logprob, state_val, intention_prob = self.policy_old.act(state, belief, valid_moves)
         self.buffer.states.append(state.detach())
         self.buffer.believes.append(belief.detach())
-        self.buffer.actions.append(action)
+        self.buffer.actions.append(action_id)
         self.buffer.logprobs.append(action_logprob)
         self.buffer.state_values.append(state_val)
-        return action.item(), intention_prob
+        action = [m for m in valid_moves if move2id(m, self.num_players, self.num_colors, self.num_ranks, self.hand_size) == action_id]
+        assert len(action) == 1
+        return action[0], intention_prob
     
     def update(self):
         rewards = []
         discounted_reward = 0
-        for reward, is_terminal in reversed(zip(self.buffer.rewards, self.buffer.is_terminals)):
+        for reward, is_terminal in zip(reversed(self.buffer.rewards), reversed(self.buffer.is_terminals)):
             if is_terminal:
                 discounted_reward = 0
             discounted_reward = reward + self.discount_factor * discounted_reward
             rewards.insert(0, discounted_reward)
-        rewards = torch.Tensor(rewards, torch.float32).to(self.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
         
         old_states = torch.stack(self.buffer.states, dim=0).detach().to(self.device)
         old_believes = torch.stack(self.buffer.believes, dim=0).detach().to(self.device)
-        old_actions = torch.stack(self.buffer.actions, dim=0).detach().to(self.device)
-        old_logprobs = torch.stack(self.buffer.logprobs, dim=0).detach().to(self.device)
-        old_state_values = torch.stack(self.buffer.state_values, dim=0).detach().to(self.device)
+        old_actions = torch.tensor(self.buffer.actions, dtype=torch.long, requires_grad=False, device=self.device)
+        old_logprobs = torch.tensor(self.buffer.logprobs, dtype=torch.float, requires_grad=False, device=self.device)
+        old_state_values = torch.tensor(self.buffer.state_values, dtype=torch.float, requires_grad=False, device=self.device)
         advantages = rewards.detach() - old_state_values.detach()
         mse_loss_fn = nn.MSELoss()
         
@@ -128,7 +151,6 @@ class PPOAgent:
         for _ in range(self.num_training_epochs):
             # Compute new value functions
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_believes, old_actions)
-            state_values = None
             # Compute r
             ratios = torch.exp(logprobs - old_logprobs.detach())
             # Compute loss

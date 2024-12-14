@@ -24,7 +24,7 @@ class ActorModule(nn.Module):
         )
         self.intention_mapping = nn.Linear(hidden_dim_actor, num_intention, bias=False, device=device)
         self.intention_values = nn.Parameter(torch.randn(num_intention, hidden_dim_actor, dtype=torch.float32, device=device, requires_grad=True))
-        self.output_trans = nn.Linear(hidden_dim_actor, num_moves)
+        self.output_trans = nn.Linear(hidden_dim_actor, num_moves, device=device)
     
     def forward(self, state: torch.Tensor, belief: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         input_emb = torch.concat((state, belief), dim=1)
@@ -32,7 +32,8 @@ class ActorModule(nn.Module):
         logits = self.intention_mapping(intention_keys)
         dist = nn.functional.softmax(logits, dim=1)
         intention_output = dist @ self.intention_values
-        return self.output_trans(intention_output), dist
+        action_logits = self.output_trans(intention_output)
+        return nn.functional.softmax(action_logits, dim=1), dist
 
 
 class CriticModule(nn.Module):
@@ -66,6 +67,7 @@ class BeliefUpdateModule(nn.Module):
             hidden_dim_update (int): It decides the width of the belief-update module.
             device (str):
         """
+        super().__init__()
         self.input_trans = nn.Sequential(
             nn.Linear(num_moves + 2 * emb_dim_state, 4 * hidden_dim_update, device=device),
             nn.ReLU(),
@@ -79,6 +81,7 @@ class BeliefUpdateModule(nn.Module):
     def forward(self, belief: torch.Tensor, origin_state: torch.Tensor, result_state: torch.Tensor, action: torch.LongTensor) -> torch.Tensor:
         action_emb = nn.functional.one_hot(action, num_classes=self.num_moves)
         input_emb = torch.concat((action_emb, origin_state, result_state), dim=1)
+        input_emb = self.input_trans.forward(input_emb)
         return self.update.forward(input_emb, belief)
 
 

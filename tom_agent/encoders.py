@@ -140,7 +140,7 @@ class LastMovesEncoder(nn.Module):
     
     def forward(self, last_moves: List[HanabiHistoryItem], cur_player_offset: int):
         if len(last_moves) == 0:
-            return self.h0
+            return self.h0[-1]
         move_ids = []
         for history in reversed(last_moves):
             move = history.move()
@@ -173,7 +173,7 @@ class TokenEncoder(nn.Module):
             return torch.zeros(self.max_tokens, dtype=torch.float32, device=self.device)
         else:
             cur_token = torch.tensor([cur_token - 1], dtype=torch.long, device=self.device, requires_grad=False)
-            return nn.functional.one_hot(cur_token, num_classes=self.max_tokens).float()
+            return nn.functional.one_hot(cur_token, num_classes=self.max_tokens).float().flatten()
 
     def dim(self):
         return self.max_tokens

@@ -203,6 +203,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
                 state.deal_random_card()
                 continue
             cur_player = state.cur_player()
+            initial_life_tokens = state.life_tokens()
             # Cache initial state
             initial_state_emb = hanabi_agent.encode_state(state, cur_player)
             # Take an action
@@ -210,7 +211,8 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             print(f"Episode {count_episode}, step {episode_time_steps}, player {cur_player}: {action}")
             # Environment
             state.apply_move(action)
-            reward = compute_reward()
+            reward = compute_reward(state, initial_life_tokens)
+            print(f"\tReward = {reward}")
             done = state.is_terminal()
             result_state_emb = hanabi_agent.encode_state(state, cur_player)
             believes = hanabi_agent.update_believes(believes, initial_state_emb, result_state_emb, action)

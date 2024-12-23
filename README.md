@@ -9,7 +9,7 @@ Install the learning environment:
 ```
 sudo apt-get install g++            # if you don't already have a CXX compiler
 sudo apt-get install python-pip     # if you don't already have pip
-pip install .                       # or pip install git+repo_url to install directly from github
+pip install git+https://github.com/google-deepmind/hanabi-learning-environment.git
 ```
 Run the examples:
 ```

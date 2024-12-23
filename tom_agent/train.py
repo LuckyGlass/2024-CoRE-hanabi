@@ -223,7 +223,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             initial_state = state.copy()
             # Take an action
             action, intention_probs = hanabi_agent.select_action(state, believes[0])
-            print(f"Episode {count_episode}, step {episode_time_steps}, player {cur_player}: {action}")
+            print(f"Episode {count_episode}, step {episode_time_steps} ({global_time_steps}), player {cur_player}: {action}")
             # Environment
             state.apply_move(action)
             reward = compute_reward(state, initial_life_tokens)

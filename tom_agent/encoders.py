@@ -2,7 +2,8 @@ import torch
 from hanabi_learning_environment.pyhanabi import (
     HanabiCard,
     HanabiObservation,
-    HanabiHistoryItem
+    HanabiHistoryItem,
+    HanabiMoveType
 )
 from torch import nn
 from typing import List
@@ -43,30 +44,20 @@ class CardKnowledgeEncoder(nn.Module):
 
 
 class DiscardPileEncoder(nn.Module):
-    def __init__(self, num_colors: int, num_ranks: int, emb_dim_discard: int, device: str, **_):
+    def __init__(self, num_colors: int, num_ranks: int, device: str, **_):
         """
         Args:
             num_colors (int):
             num_ranks (int):
-            emb_dim_discard (int):
             device (str):
         """
         super().__init__()
-        self.rnn_encoder = nn.LSTM(num_colors * num_ranks, emb_dim_discard, num_layers=1, batch_first=True, device=device)
         self.num_colors = num_colors
         self.num_ranks = num_ranks
         self.device = device
-        self.emb_dim_discard = emb_dim_discard
+        self.emb_dim_discard = count_total_cards(num_colors, num_ranks)
     
     def forward(self, discard_pile: List[HanabiCard]):
-        # Get RNN Embedding
-        if len(discard_pile) == 0:
-            rnn_emb = torch.zeros(self.emb_dim_discard, dtype=torch.float32, device=self.device)
-        else:
-            card_ids = [card.color() * self.num_ranks + card.rank() for card in discard_pile]
-            card_ids = torch.tensor(card_ids, dtype=torch.long, device=self.device, requires_grad=False)
-            rnn_input = nn.functional.one_hot(card_ids, num_classes=self.num_colors * self.num_ranks)
-            rnn_emb = self.rnn_encoder(rnn_input.float())[0][-1]
         # Get Hard Embedding
         temp_count = [[0 for _ in range(self.num_ranks)] for _ in range(self.num_colors)]
         for card in discard_pile:
@@ -76,15 +67,15 @@ class DiscardPileEncoder(nn.Module):
             for r in range(self.num_ranks):
                 if r == 0:
                     hard_emb += [1] * temp_count[c][r] + [0] * (3 - temp_count[c][r])
-                elif r == 5:
+                elif r == 4:
                     hard_emb += [1] * temp_count[c][r] + [0] * (1 - temp_count[c][r])
                 else:
                     hard_emb += [1] * temp_count[c][r] + [0] * (2 - temp_count[c][r])
-        hard_emb = torch.tensor(hard_emb, dtype=torch.float32, requires_grad=False, device=self.device)
-        return torch.concat((rnn_emb, hard_emb))
+        hard_emb = torch.tensor(hard_emb, dtype=torch.float32, requires_grad=False, device=self.device).flatten()
+        return hard_emb
 
     def dim(self):
-        return self.emb_dim_discard + count_total_cards(self.num_colors, self.num_ranks)
+        return self.emb_dim_discard
 
 
 class FireworkEncoder(nn.Module):
@@ -110,14 +101,13 @@ class FireworkEncoder(nn.Module):
 
 
 class LastMovesEncoder(nn.Module):
-    def __init__(self, num_players: int, hand_size: int, num_colors: int, num_ranks: int, emb_dim_history: int, device: str, **_):
+    def __init__(self, num_players: int, hand_size: int, num_colors: int, num_ranks: int, num_moves: int, gamma_history: float, device: str, **_):
         """
         Args:
             num_players (int):
             hand_size (int):
             num_colors (int):
             num_ranks (int):
-            emb_dim_history (int): The dimension of the embeddings of history movements.
             device (str):
         """
         super().__init__()
@@ -125,35 +115,30 @@ class LastMovesEncoder(nn.Module):
         self.num_colors = num_colors
         self.num_ranks = num_ranks
         self.hand_size = hand_size
-        self.count_total_moves = count_total_moves(num_players, num_colors, num_ranks, hand_size)
-        self.move_rnn = nn.LSTM(
-            input_size=num_players * self.count_total_moves,
-            hidden_size=emb_dim_history,
-            num_layers=1,
-            batch_first=True,
-            device=device
-        )
-        self.emb_dim_history = emb_dim_history
+        self.num_moves = num_moves
         self.device = device
-        self.h0 = nn.Parameter(torch.randn((1, emb_dim_history), device=device, requires_grad=True))
-        self.c0 = nn.Parameter(torch.randn((1, emb_dim_history), device=device, requires_grad=True))
+        self.emb_dim_history = num_players * num_moves
+        self.gamma = gamma_history
     
     def forward(self, last_moves: List[HanabiHistoryItem], cur_player_offset: int):
         if len(last_moves) == 0:
-            return self.h0[-1]
+            return torch.zeros(self.emb_dim_history, dtype=torch.float32, device=self.device)
         move_ids = []
-        for history in reversed(last_moves):
+        for history in last_moves:
             move = history.move()
+            if move.type() == HanabiMoveType.DEAL:
+                continue
             move_id = move2id(move, self.num_players, self.num_colors, self.num_ranks, self.hand_size)
             player = history.player()
             if player >= cur_player_offset:
                 player -= cur_player_offset
             else:
                 player = self.num_players + player - cur_player_offset
-            move_ids.append(player * self.count_total_moves + move_id)
+            move_ids.append(player * self.num_moves + move_id)
         move_ids = torch.tensor(move_ids, dtype=torch.long, device=self.device, requires_grad=False)
-        move_ids = nn.functional.one_hot(move_ids, num_classes=self.num_players * self.count_total_moves).float()
-        return self.move_rnn.forward(move_ids, (self.h0, self.c0))[0][-1]
+        move_ids = nn.functional.one_hot(move_ids, num_classes=self.emb_dim_history).float()
+        factor = self.gamma ** torch.arange(move_ids.shape[0], device=self.device)
+        return torch.sum(factor[:, None] * move_ids, dim=0)
 
     def dim(self):
         return self.emb_dim_history

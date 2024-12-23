@@ -119,8 +119,8 @@ class PPOAgent:
     def select_action(self, state: torch.Tensor, belief: torch.Tensor, valid_moves: List[HanabiMove]) -> Tuple[HanabiMove, torch.Tensor]:
         state = state.to(self.device)
         action_id, action_logprob, state_val, intention_prob = self.policy_old.act(state, belief, valid_moves)
-        self.buffer.states.append(state.detach())
-        self.buffer.believes.append(belief.detach())
+        self.buffer.states.append(state.clone())
+        self.buffer.believes.append(belief.clone())
         self.buffer.actions.append(action_id)
         self.buffer.logprobs.append(action_logprob)
         self.buffer.state_values.append(state_val)
@@ -139,20 +139,21 @@ class PPOAgent:
         rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
         
-        old_states = torch.stack(self.buffer.states, dim=0).detach().to(self.device)
-        old_believes = torch.stack(self.buffer.believes, dim=0).detach().to(self.device)
+        old_states = torch.stack(self.buffer.states, dim=0).to(self.device)
+        old_believes = torch.stack(self.buffer.believes, dim=0).to(self.device)
         old_actions = torch.tensor(self.buffer.actions, dtype=torch.long, requires_grad=False, device=self.device)
         old_logprobs = torch.tensor(self.buffer.logprobs, dtype=torch.float, requires_grad=False, device=self.device)
         old_state_values = torch.tensor(self.buffer.state_values, dtype=torch.float, requires_grad=False, device=self.device)
-        advantages = rewards.detach() - old_state_values.detach()
+        advantages = rewards - old_state_values
         mse_loss_fn = nn.MSELoss()
         
         # Optimize
-        for _ in range(self.num_training_epochs):
+        print('-' * 10, "Update", '-' * 10)
+        for epoch in range(self.num_training_epochs):
             # Compute new value functions
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_believes, old_actions)
             # Compute r
-            ratios = torch.exp(logprobs - old_logprobs.detach())
+            ratios = torch.exp(logprobs - old_logprobs)
             # Compute loss
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * advantages
@@ -160,8 +161,10 @@ class PPOAgent:
             loss = -torch.min(surr1, surr2) + 0.5 * mse_loss_fn(state_values, rewards) - 0.01 * dist_entropy
             # Update
             self.optimizer.zero_grad()
-            loss.mean().backward()
+            loss.mean().backward(retain_graph=True)
+            print(f"Epoch {epoch}: {loss.mean()}")
             self.optimizer.step()
+        print('-' * 28)
         
         # Clone policy & clear buffer
         self.policy_old.load_state_dict(self.policy.state_dict())

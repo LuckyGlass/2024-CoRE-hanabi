@@ -16,7 +16,7 @@ from .encoders import (
     TokenEncoder
 )
 from .models import BeliefUpdateModule, ToMModule
-from .utils import move2id
+from .utils import move2id, count_total_cards
 
 
 class HanabiPPOAgentWrapper:
@@ -27,8 +27,7 @@ class HanabiPPOAgentWrapper:
             device (str):
             discount_factor (float):
             emb_dim_belief (int): The dimension of the embeddings of believes.
-            emb_dim_discard (int): The dimension of the RNN-embeddings of discarded cards; it also uses a hard embedding of discard piles.
-            emb_dim_history (int): The dimension of the embeddings of history movements.
+            gamma_history (float): The hyperparameter of the exponential average in LastMovesEncoder.
             hand_size (int):
             hidden_dim_actor (int): It decides the width of the Actor module.
             hidden_dim_critic (int): It decides the width of the Critic module.
@@ -71,15 +70,19 @@ class HanabiPPOAgentWrapper:
         self.device = kwargs['device']
     
     def encode_state(self, state: HanabiState, cur_player: Optional[int]=None):
-        if cur_player is not None:
-            observation = state.observation(cur_player)
-        else:
-            observation = state.observation(state.cur_player())
+        if cur_player is None:
+            cur_player = state.cur_player()
+        observation = state.observation(cur_player)
         card_knowledge_emb = self.card_knowledge_encoder.forward(observation)
+        assert card_knowledge_emb.shape[-1] == self.card_knowledge_encoder.dim()
         discard_pile_emb = self.discard_pile_encoder.forward(observation.discard_pile())
+        assert discard_pile_emb.shape[-1] == self.discard_pile_encoder.dim()
         firework_emb = self.firework_encoder.forward(observation.fireworks())
-        last_moves_emb = self.last_moves_encoder.forward(observation.last_moves(), observation.cur_player_offset())
+        assert firework_emb.shape[-1] == self.firework_encoder.dim()
+        last_moves_emb = self.last_moves_encoder.forward(observation.last_moves(), cur_player)
+        assert last_moves_emb.shape[-1] == self.last_moves_encoder.dim()
         info_token_emb = self.info_token_encoder.forward(observation.information_tokens())
+        assert info_token_emb.shape[-1] == self.info_token_encoder.dim()
         return torch.concat((card_knowledge_emb, discard_pile_emb, firework_emb, last_moves_emb, info_token_emb), dim=0)
     
     def select_action(self, state: HanabiState, belief: torch.Tensor) -> Tuple[HanabiMove, torch.Tensor]:
@@ -93,59 +96,62 @@ class HanabiPPOAgentWrapper:
             self.optimizer.step()
             self.optimizer.zero_grad()
     
-    def update_believes(self, believes: List[torch.Tensor], origin_state: torch.Tensor, result_state: torch.Tensor, action: HanabiMove) -> torch.Tensor:
+    def update_believes(self, believes: List[torch.Tensor], origin_state: HanabiState, result_state: HanabiState, action: HanabiMove) -> torch.Tensor:
         """Update the belief embeddings.
         Args:
             believes (List[Tensor]): the belief embeddings, indexed as +0, +1, ..., +(N-1).
-            origin_state (Tensor): the embedding of the state before the action.
-            result_state (Tensor): the embedding of the state after the action.
+            origin_state (HanabiState): the state before the action.
+            result_state (HanabiState): the state after the action.
             action (HanabiMove): the action.
         """
-        batch_size = believes.shape[0]
-        origin_state = origin_state.repeat((batch_size, 1))
-        result_state = result_state.repeat((batch_size, 1))
-        action_id = move2id(action, self.num_players, self.num_colors, self.num_ranks, self.hand_size)
-        action_id = torch.tensor([action_id] * batch_size, dtype=torch.long, device=self.device)
-        return torch.concat([self.update_self_belief.forward(believes[:1], origin_state[:1], result_state[:1], action_id[:1]), self.update_self_belief.forward(believes[1:], origin_state[1:], result_state[1:], action_id[1:])], dim=0)
+        st_player_id = origin_state.cur_player()  # label the player taking the action as +0
+        origin_state_emb = torch.stack([self.encode_state(origin_state, (st_player_id + player_offset) % self.num_players) for player_offset in range(self.num_players)], dim=0)
+        result_state_emb = torch.stack([self.encode_state(result_state, (st_player_id + player_offset) % self.num_players) for player_offset in range(self.num_players)], dim=0)
+        action_id = move2id(action, self.num_players, self.num_colors, self.num_ranks, self.hand_size)  # TODO: Here we only support 2 players
+        action_id = torch.tensor([action_id] * self.num_players, dtype=torch.long, device=self.device)
+        return torch.concat([self.update_self_belief.forward(believes[:1], origin_state_emb[:1], result_state_emb[:1], action_id[:1]),
+                             self.update_self_belief.forward(believes[1:], origin_state_emb[1:], result_state_emb[1:], action_id[1:])], dim=0)
     
-    def tom_supervise(self, initial_state: torch.Tensor, result_state: torch.Tensor, action: HanabiMove, gt_intention: torch.Tensor, believes: torch.Tensor):
+    def tom_supervise(self, origin_state: HanabiState, result_state: HanabiState, action: HanabiMove, gt_intention: torch.Tensor, believes: torch.Tensor):
         """
         Args:
-            initial_state (Tensor): the embedding of the state before the action.
-            result_state (Tensor): the embedding of the state after the action.
+            origin_state (HanabiState): the state before the action.
+            result_state (HanabiState): the state after the action.
             action (HanabiMove): the action.
             gt_intention (Tensor): the ground-truth of the intention distribution.
-            believes (Tensor): the embeddings of the believes, indexed +1, +2, ..., +(N-1), +0
+            believes (Tensor): the embeddings of the believes, starting at the player taking the action.
         """
-        gt_belief = believes[-1].detach()
-        others_belief = believes[:-1].detach()
-        batch_size = others_belief.shape[0]
-        gt_belief = gt_belief.repeat((batch_size, 1))
-        initial_state = initial_state.repeat((batch_size, 1)).detach()
-        result_state = result_state.repeat((batch_size, 1)).detach()
-        gt_intention = torch.distributions.Categorical(gt_intention.detach().repeat(batch_size, 1))
-        action_id = move2id(action, self.num_players, self.num_colors, self.num_ranks, self.hand_size)
-        action_id = torch.tensor([action_id] * batch_size, dtype=torch.long, device=self.device)
+        gt_belief = believes[0].detach()  # The target needn't consider whether others can predict it.
+        others_belief = believes[1:]
+        gt_belief = gt_belief.repeat((self.num_players - 1, 1))
+        st_player_id = origin_state.cur_player()  # label the player taking the action as +0
+        origin_state_emb = torch.stack([self.encode_state(origin_state, (st_player_id + player_offset) % self.num_players) for player_offset in range(1, self.num_players)], dim=0)
+        result_state_emb = torch.stack([self.encode_state(result_state, (st_player_id + player_offset) % self.num_players) for player_offset in range(1, self.num_players)], dim=0)
+        gt_intention = torch.distributions.Categorical(gt_intention.detach().repeat(self.num_players - 1, 1))  # The target needn't consider whether others can predict it.
+        action_id = move2id(action, self.num_players, self.num_colors, self.num_ranks, self.hand_size)  # TODO: Here only supports 2 players.
+        action_id = torch.tensor([action_id] * (self.num_players - 1), dtype=torch.long, device=self.device)
         action_id = torch.nn.functional.one_hot(action_id, num_classes=self.num_moves).float()
-        pred_intention, pred_belief = self.tom.forward(initial_state, result_state, others_belief, action_id)
+        pred_intention, pred_belief = self.tom.forward(origin_state_emb, result_state_emb, others_belief, action_id)
+        # use MSE loss
         loss_belief_fn = torch.nn.MSELoss(reduction='sum')
-        loss_belief = loss_belief_fn(pred_belief, gt_belief) / batch_size
+        loss_belief = loss_belief_fn(pred_belief, gt_belief) / (self.num_players - 1)
+        # use KL divergence
         pred_intention = torch.distributions.Categorical(pred_intention)
-        loss_intention = 0.5 * (torch.distributions.kl_divergence(gt_intention, pred_intention) + torch.distributions.kl_divergence(pred_intention, gt_intention))
+        loss_intention = torch.distributions.kl_divergence(pred_intention, gt_intention)
         loss_intention = loss_intention.mean()
+        print(f"L_intention = {loss_intention}, L_belief = {loss_belief}")
         loss_intention.backward(retain_graph=True)
-        loss_belief.backward()
+        loss_belief.backward(retain_graph=True)
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, emb_dim_discard: int, emb_dim_history: int, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, **_):
     """
     Args:
         clip_epsilon (float):
         device (str):
         discount_factor (float):
         emb_dim_belief (int): The dimension of the embeddings of believes.
-        emb_dim_discard (int): The dimension of the RNN-embeddings of discarded cards; it also uses a hard embedding of discard piles.
-        emb_dim_history (int): The dimension of the embeddings of history movements.
+        gamma_history (float): The hyperparameter of the exponential average in LastMovesEncoder.
         hand_size (int):
         hidden_dim_actor (int): It decides the width of the Actor module.
         hidden_dim_critic (int): It decides the width of the Critic module.
@@ -166,14 +172,22 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         num_training_epochs (int): The number of epochs to train the policy model per updating step.
         update_interval (int): The interval (timesteps) between two updating steps.
     """
+    print('-' * 10, "Game settings", '-' * 10)
+    print("#Players", num_players)
+    print("#Colors", num_colors)
+    print("#Ranks", num_ranks)
+    print("Hand size", hand_size)
+    print("#Info tokens", max_information_token)
+    print("#Moves", num_moves)
+    print("#Cards", count_total_cards(num_colors, num_ranks))
+    print('-' * 35)
     global_time_steps = 0
     hanabi_agent = HanabiPPOAgentWrapper(
         clip_epsilon=clip_epsilon,
         device=device,
         discount_factor=discount_factor,
         emb_dim_belief=emb_dim_belief,
-        emb_dim_discard=emb_dim_discard,
-        emb_dim_history=emb_dim_history,
+        gamma_history=gamma_history,
         hand_size=hand_size,
         hidden_dim_actor=hidden_dim_actor,
         hidden_dim_critic=hidden_dim_critic,
@@ -194,6 +208,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
     count_episode = 0
     while global_time_steps <= max_training_timesteps:
         state = game.new_initial_state()
+        # TODO: better initialization
         believes: torch.Tensor = torch.zeros((game.num_players(), emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
         episode_time_steps = 0
         episode_total_reward = 0
@@ -205,7 +220,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             cur_player = state.cur_player()
             initial_life_tokens = state.life_tokens()
             # Cache initial state
-            initial_state_emb = hanabi_agent.encode_state(state, cur_player)
+            initial_state = state.copy()
             # Take an action
             action, intention_probs = hanabi_agent.select_action(state, believes[0])
             print(f"Episode {count_episode}, step {episode_time_steps}, player {cur_player}: {action}")
@@ -213,11 +228,11 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             state.apply_move(action)
             reward = compute_reward(state, initial_life_tokens)
             print(f"\tReward = {reward}")
-            done = state.is_terminal()
-            result_state_emb = hanabi_agent.encode_state(state, cur_player)
-            believes = hanabi_agent.update_believes(believes, initial_state_emb, result_state_emb, action)
+            done = state.is_terminal() or episode_time_steps == max_episode_length - 1
+            result_state = state.copy()
+            believes = hanabi_agent.update_believes(believes, initial_state, result_state, action)
+            hanabi_agent.tom_supervise(initial_state, result_state, action, intention_probs, believes)
             believes = believes.roll(-1, 0)
-            hanabi_agent.tom_supervise(initial_state_emb, result_state_emb, action, intention_probs, believes)
             # Save `reward` and `done`
             hanabi_agent.ppo_agent.buffer.rewards.append(reward)
             hanabi_agent.ppo_agent.buffer.is_terminals.append(done)
@@ -227,6 +242,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             # Update PPO agent
             if global_time_steps % update_interval == 0:
                 hanabi_agent.update()
+                believes = believes.detach()  # gradients clipped due to interval
             # Terminal
             if done:
                 break

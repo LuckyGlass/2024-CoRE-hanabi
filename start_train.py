@@ -36,4 +36,6 @@ if __name__ == "__main__":
         'num_epochs': 1
     }
     game = pyhanabi.HanabiGame(game_config)
+    import torch
+    torch.autograd.set_detect_anomaly(True)
     train(game, **(vars(model_args) | vars(game_args) | vars(training_args)))

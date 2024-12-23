@@ -27,8 +27,12 @@ def move2id(move: HanabiMove, num_players: int, num_colors: int, num_ranks: int,
     elif move.type() == HanabiMoveType.PLAY:
         return hand_size + move.card_index()
     elif move.type() == HanabiMoveType.REVEAL_COLOR:
-        return 2 * hand_size + move.color()
+        offset = (move.target_offset() % num_players + num_players) % num_players
+        assert offset > 0
+        return 2 * hand_size + (offset - 1) * num_colors + move.color()
     elif move.type() == HanabiMoveType.REVEAL_RANK:
-        return 2 * hand_size + num_colors + move.rank()
+        offset = (move.target_offset() % num_players + num_players) % num_players
+        assert offset > 0
+        return 2 * hand_size + (num_players - 1) * num_colors + (offset - 1) * num_ranks + move.rank()
     else:
         return -1

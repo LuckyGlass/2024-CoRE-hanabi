@@ -53,6 +53,7 @@ class CriticModule(nn.Module):
             nn.Linear(hidden_dim_critic * 4, 1, device=device),
         )
     
+    # TODO
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         return self.critic(state).flatten()
 

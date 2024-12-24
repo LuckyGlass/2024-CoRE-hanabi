@@ -39,3 +39,5 @@ class TrainingArguments:
     max_training_timesteps: int = field(metadata={'help': "The maximum number of actions throughout the training process."})
     max_episode_length: int = field(metadata={'help': "The maximum length of an episode."})
     update_interval: int = field(metadata={'help': "The interval (timesteps) between two updating steps."})
+    saving_interval: int = field(metadata={'help': "The interval (updating steps) between two checkpoints."})
+    saving_dir: str = field(metadata={'help': "The dir to save the checkpoints."})

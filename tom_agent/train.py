@@ -19,6 +19,7 @@ from .encoders import (
 )
 from .models import BeliefUpdateModule, ToMModule
 from .utils import move2id, count_total_cards
+import os
 
 
 class HanabiPPOAgentWrapper:
@@ -146,8 +147,33 @@ class HanabiPPOAgentWrapper:
         loss_belief.backward(retain_graph=True)
         return loss_intention.detach().cpu().item(), loss_belief.detach().cpu().item()
 
+    def save(self, save_path: str):
+        torch.save(dict(
+            ppo_policy=self.ppo_agent.policy.state_dict(),
+            card_knowledge_encoder=self.card_knowledge_encoder.state_dict(),
+            discard_pile_encoder=self.discard_pile_encoder.state_dict(),
+            firework_encoder=self.firework_encoder.state_dict(),
+            last_moves_encoder=self.last_moves_encoder.state_dict(),
+            info_token_encoder=self.info_token_encoder.state_dict(),
+            update_self_belief=self.update_self_belief.state_dict(),
+            update_other_belief=self.update_other_belief.state_dict(),
+            tom=self.tom.state_dict()
+        ), save_path)
+    
+    def load(self, checkpoint_path: str):
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        self.ppo_agent.policy.load_state_dict(checkpoint['ppo_policy'])
+        self.card_knowledge_encoder.load_state_dict(checkpoint['card_knowledge_encoder'])
+        self.discard_pile_encoder.load_state_dict(checkpoint['discard_pile_encoder'])
+        self.firework_encoder.load_state_dict(checkpoint['firework_encoder'])
+        self.last_moves_encoder.load_state_dict(checkpoint['last_moves_encoder'])
+        self.info_token_encoder.load_state_dict(checkpoint['info_token_encoder'])
+        self.update_self_belief.load_state_dict(checkpoint['update_self_belief'])
+        self.update_other_belief.load_state_dict(checkpoint['update_other_belief'])
+        self.tom.load_state_dict(checkpoint['tom'])
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, **_):
+
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, **_):
     """
     Args:
         clip_epsilon (float):
@@ -174,6 +200,8 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         num_ranks (int):
         num_training_epochs (int): The number of epochs to train the policy model per updating step.
         update_interval (int): The interval (timesteps) between two updating steps.
+        saving_interval (int): The interval (updating steps) between two checkpoints.
+        saving_dir (str): The dir to save the checkpoints.
     """
     print('-' * 10, "Game settings", '-' * 10)
     print("#Players", num_players)
@@ -184,6 +212,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
     print("#Moves", num_moves)
     print("#Cards", count_total_cards(num_colors, num_ranks))
     print('-' * 35)
+    os.makedirs(saving_dir, exist_ok=True)
     global_time_steps = 0
     hanabi_agent = HanabiPPOAgentWrapper(
         clip_epsilon=clip_epsilon,
@@ -251,6 +280,8 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
                 believes = believes.detach()  # gradients clipped due to interval
                 wandb.log(dict(count_update=count_update, loss_intention=sum(cache_loss_intention)/len(cache_loss_intention), loss_belief=sum(cache_loss_belief)/len(cache_loss_belief), loss_reward=loss_reward), step=global_time_steps)
                 del cache_loss_belief[:], cache_loss_intention[:]
+                if count_update % saving_interval == 0:
+                    hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))
             # Terminal
             if done:
                 wandb.log(dict(total_reward=episode_total_reward), step=global_time_steps)

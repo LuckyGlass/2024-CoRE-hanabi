@@ -21,4 +21,6 @@ python start_train.py \
     --num_training_epochs 4 \
     --max_training_timesteps 3000000 \
     --max_episode_length 128 \
-    --update_interval 2048
+    --update_interval 2048 \
+    --saving_interval 64 \
+    --saving_dir checkpoints

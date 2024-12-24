@@ -4,6 +4,7 @@ from hanabi_learning_environment import pyhanabi
 from transformers import HfArgumentParser
 import os
 import wandb
+import time
 
 
 if __name__ == "__main__":
@@ -24,6 +25,7 @@ if __name__ == "__main__":
     wandb.login(key=os.environ['WANDB_LOG_KEY'])
     wandb.init(
         project="2024-CoRE-Hanabi",
+        name=training_args.run_name + time.strftime('-%m-%d-%H-%M-%S', time.localtime()),
         config=(vars(model_args) | vars(game_args) | vars(training_args))
     )
     train(game, **(vars(model_args) | vars(game_args) | vars(training_args)))

@@ -41,3 +41,4 @@ class TrainingArguments:
     update_interval: int = field(metadata={'help': "The interval (timesteps) between two updating steps."})
     saving_interval: int = field(metadata={'help': "The interval (updating steps) between two checkpoints."})
     saving_dir: str = field(metadata={'help': "The dir to save the checkpoints."})
+    run_name: str = field(metadata={'help': "The run name reported to W&B."})

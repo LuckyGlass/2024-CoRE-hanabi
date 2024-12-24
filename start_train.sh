@@ -23,4 +23,5 @@ python start_train.py \
     --max_episode_length 128 \
     --update_interval 2048 \
     --saving_interval 64 \
-    --saving_dir checkpoints
+    --saving_dir checkpoints \
+    --run_name cpu

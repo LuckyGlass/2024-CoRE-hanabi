@@ -1,12 +1,12 @@
 python start_train.py \
     --device cuda \
-    --emb_dim_belief 128 \
+    --emb_dim_belief 64 \
     --gamma_history 0.9 \
     --num_intention 5 \
     --hidden_dim_actor 128 \
     --hidden_dim_critic 128 \
-    --hidden_dim_tom 32 \
-    --hidden_dim_update 256 \
+    --hidden_dim_tom 128 \
+    --hidden_dim_update 128 \
     --num_colors 4 \
     --num_ranks 5 \
     --num_players 2 \
@@ -14,10 +14,10 @@ python start_train.py \
     --max_information_token 8 \
     --discount_factor 0.9 \
     --clip_epsilon 0.1 \
-    --learning_rate_actor 1e-5 \
-    --learning_rate_critic 1e-5 \
-    --learning_rate_encoder 1e-5 \
-    --learning_rate_update 1e-5 \
+    --learning_rate_actor 1e-3 \
+    --learning_rate_critic 1e-4 \
+    --learning_rate_encoder 1e-4 \
+    --learning_rate_update 1e-4 \
     --num_training_epochs 4 \
     --max_training_timesteps 3000000 \
     --max_episode_length 128 \

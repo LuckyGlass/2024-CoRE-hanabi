@@ -2,6 +2,8 @@ from tom_agent.train import train
 from tom_agent.args import ModelArguments, GameArguments, TrainingArguments
 from hanabi_learning_environment import pyhanabi
 from transformers import HfArgumentParser
+import os
+import wandb
 
 
 if __name__ == "__main__":
@@ -18,24 +20,10 @@ if __name__ == "__main__":
         'seed': -1,
         'random_start_player': False,
     }
-    model_config = {
-        'dim_state': 10,
-        'dim_belief': 10,
-        'dim_action': 10,
-        'num_intention': 2,
-        'actor_hidden_dim': 10,
-        'critic_hidden_dim': 10,
-        'device': 'cuda'
-    }
-    ppo_config = {
-        'discount_factor': 0.9,
-        'clip_epsilon': 0.1,
-        'device': 'cuda',
-        'learning_rate_actor': 1e-4,
-        'learning_rate_critic': 1e-3,
-        'num_epochs': 1
-    }
     game = pyhanabi.HanabiGame(game_config)
-    import torch
-    torch.autograd.set_detect_anomaly(True)
+    wandb.login(key=os.environ['WANDB_LOG_KEY'])
+    wandb.init(
+        project="2024-CoRE-Hanabi",
+        config=(vars(model_args) | vars(game_args) | vars(training_args))
+    )
     train(game, **(vars(model_args) | vars(game_args) | vars(training_args)))

@@ -128,7 +128,7 @@ class PPOAgent:
         assert len(action) == 1
         return action[0], intention_prob
     
-    def update(self):
+    def update(self) -> float:
         rewards = []
         discounted_reward = 0
         for reward, is_terminal in zip(reversed(self.buffer.rewards), reversed(self.buffer.is_terminals)):
@@ -148,7 +148,7 @@ class PPOAgent:
         mse_loss_fn = nn.MSELoss()
         
         # Optimize
-        print('-' * 10, "Update", '-' * 10)
+        res = 0
         for epoch in range(self.num_training_epochs):
             # Compute new value functions
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_believes, old_actions)
@@ -161,14 +161,14 @@ class PPOAgent:
             loss = -torch.min(surr1, surr2) + 0.5 * mse_loss_fn(state_values, rewards) - 0.01 * dist_entropy
             # Update
             self.optimizer.zero_grad()
+            res = loss.detach().mean().cpu().item()
             loss.mean().backward(retain_graph=True)
-            print(f"Epoch {epoch}: {loss.mean()}")
             self.optimizer.step()
-        print('-' * 28)
         
         # Clone policy & clear buffer
         self.policy_old.load_state_dict(self.policy.state_dict())
         self.buffer.clear()
+        return res
     
     def save(self, checkpoint_path: str):
         """Save the Actor-Critic module (with `torch.save`).

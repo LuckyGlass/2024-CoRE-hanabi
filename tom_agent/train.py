@@ -7,6 +7,7 @@ from hanabi_learning_environment.pyhanabi import (
 )
 from tqdm import tqdm
 from typing import Optional, List, Dict, Union, Tuple
+import wandb
 from .PPO import PPOAgent
 from .reward import compute_reward
 from .encoders import (
@@ -92,10 +93,11 @@ class HanabiPPOAgentWrapper:
         return self.ppo_agent.select_action(state_emb, belief, valid_moves)
     
     def update(self):
-        self.ppo_agent.update()
+        res = self.ppo_agent.update()
         if self.optimizer is not None:
             self.optimizer.step()
             self.optimizer.zero_grad()
+        return res
     
     def update_believes(self, believes: List[torch.Tensor], origin_state: HanabiState, result_state: HanabiState, action: HanabiMove) -> torch.Tensor:
         """Update the belief embeddings.
@@ -207,48 +209,49 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         num_training_epochs=num_training_epochs,
     )
     count_episode = 0
-    with tqdm(total=max_training_timesteps, desc="Train steps") as tqdm_train_steps:
-        cache_loss_intention, cache_loss_belief = [], []
-        while global_time_steps <= max_training_timesteps:
-            state = game.new_initial_state()
-            # TODO: better initialization
-            believes: torch.Tensor = torch.zeros((game.num_players(), emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
-            episode_time_steps = 0
-            episode_total_reward = 0
-            count_episode += 1
-            while max_episode_length == -1 or episode_time_steps < max_episode_length:
-                if state.cur_player() == CHANCE_PLAYER_ID:
-                    state.deal_random_card()
-                    continue
-                cur_player = state.cur_player()
-                initial_life_tokens = state.life_tokens()
-                # Cache initial state
-                initial_state = state.copy()
-                # Take an action
-                action, intention_probs = hanabi_agent.select_action(state, believes[0])
-                # Environment
-                state.apply_move(action)
-                reward = compute_reward(state, initial_life_tokens)
-                done = state.is_terminal() or episode_time_steps == max_episode_length - 1
-                result_state = state.copy()
-                believes = hanabi_agent.update_believes(believes, initial_state, result_state, action)
-                loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_state, result_state, action, intention_probs, believes)
-                cache_loss_intention.append(loss_intention)
-                cache_loss_belief.append(loss_belief)
-                believes = believes.roll(-1, 0)
-                # Save `reward` and `done`
-                hanabi_agent.ppo_agent.buffer.rewards.append(reward)
-                hanabi_agent.ppo_agent.buffer.is_terminals.append(done)
-                tqdm_train_steps.update(1)
-                tqdm_train_steps.set_postfix(dict(E=count_episode, A=f"P{cur_player}{action}", R=reward, Li=sum(cache_loss_intention)/len(cache_loss_intention), Lb=sum(cache_loss_belief)/len(cache_loss_belief)))
-                global_time_steps += 1
-                episode_time_steps += 1
-                episode_total_reward += reward
-                # Update PPO agent
-                if global_time_steps % update_interval == 0:
-                    hanabi_agent.update()
-                    believes = believes.detach()  # gradients clipped due to interval
-                    del cache_loss_belief[:], cache_loss_intention[:]
-                # Terminal
-                if done:
-                    break
+    cache_loss_intention, cache_loss_belief = [], []
+    count_update = 0
+    while global_time_steps <= max_training_timesteps:
+        state = game.new_initial_state()
+        # TODO: better initialization
+        believes: torch.Tensor = torch.zeros((game.num_players(), emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
+        episode_time_steps = 0
+        episode_total_reward = 0
+        count_episode += 1
+        while max_episode_length == -1 or episode_time_steps < max_episode_length:
+            if state.cur_player() == CHANCE_PLAYER_ID:
+                state.deal_random_card()
+                continue
+            cur_player = state.cur_player()
+            initial_life_tokens = state.life_tokens()
+            # Cache initial state
+            initial_state = state.copy()
+            # Take an action
+            action, intention_probs = hanabi_agent.select_action(state, believes[0])
+            # Environment
+            state.apply_move(action)
+            reward = compute_reward(state, initial_life_tokens)
+            done = state.is_terminal() or episode_time_steps == max_episode_length - 1
+            result_state = state.copy()
+            believes = hanabi_agent.update_believes(believes, initial_state, result_state, action)
+            loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_state, result_state, action, intention_probs, believes)
+            cache_loss_intention.append(loss_intention)
+            cache_loss_belief.append(loss_belief)
+            believes = believes.roll(-1, 0)
+            # Save `reward` and `done`
+            hanabi_agent.ppo_agent.buffer.rewards.append(reward)
+            hanabi_agent.ppo_agent.buffer.is_terminals.append(done)
+            global_time_steps += 1
+            episode_time_steps += 1
+            episode_total_reward += reward
+            # Update PPO agent
+            if global_time_steps % update_interval == 0:
+                count_update += 1
+                loss_reward = hanabi_agent.update()
+                believes = believes.detach()  # gradients clipped due to interval
+                wandb.log(dict(count_update=count_update, loss_intention=sum(cache_loss_intention)/len(cache_loss_intention), loss_belief=sum(cache_loss_belief)/len(cache_loss_belief), loss_reward=loss_reward), step=global_time_steps)
+                del cache_loss_belief[:], cache_loss_intention[:]
+            # Terminal
+            if done:
+                wandb.log(dict(total_reward=episode_total_reward), step=global_time_steps)
+                break

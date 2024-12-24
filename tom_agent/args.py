@@ -35,6 +35,7 @@ class TrainingArguments:
     learning_rate_critic: float = field(metadata={'help': "The learning rate to train the Critic module."})
     learning_rate_encoder: float = field(metadata={'help': "The learning rate to train the DiscardPileEncoder and the LastMovesEncoder."})
     learning_rate_update: float = field(metadata={'help': "The learning rate to train the BeliefUpdateModule."})
+    learning_rate_tom: float = field(metadata={'help': "The learning rate to train the ToMModule."})
     num_training_epochs: int = field(metadata={'help': "The number of epochs to train the policy model per updating step."})
     max_training_timesteps: int = field(metadata={'help': "The maximum number of actions throughout the training process."})
     max_episode_length: int = field(metadata={'help': "The maximum length of an episode."})

@@ -23,7 +23,7 @@ import os
 
 
 class HanabiPPOAgentWrapper:
-    def __init__(self, max_information_token: int, learning_rate_encoder: float, learning_rate_update: float, **kwargs):
+    def __init__(self, max_information_token: int, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, **kwargs):
         """
         Args:
             clip_epsilon (float):
@@ -64,10 +64,14 @@ class HanabiPPOAgentWrapper:
         self.num_moves = kwargs['num_moves']
         self.hand_size = kwargs['hand_size']
         self.optimizer = torch.optim.AdamW([
+            {'params': self.card_knowledge_encoder.parameters(), 'lr': learning_rate_encoder},
             {'params': self.discard_pile_encoder.parameters(), 'lr': learning_rate_encoder},
+            {'params': self.firework_encoder.parameters(), 'lr': learning_rate_encoder},
             {'params': self.last_moves_encoder.parameters(), 'lr': learning_rate_encoder},
+            {'params': self.info_token_encoder.parameters(), 'lr': learning_rate_encoder},
             {'params': self.update_self_belief.parameters(), 'lr': learning_rate_update},
             {'params': self.update_other_belief.parameters(), 'lr': learning_rate_update},
+            {'params': self.tom.parameters(), 'lr': learning_rate_tom}
         ])
         self.optimizer.zero_grad()
         self.device = kwargs['device']

@@ -14,10 +14,10 @@ python start_train.py \
     --max_information_token 8 \
     --discount_factor 0.9 \
     --clip_epsilon 0.1 \
-    --learning_rate_actor 1e-4 \
-    --learning_rate_critic 1e-3 \
-    --learning_rate_encoder 1e-3 \
-    --learning_rate_update 1e-3 \
+    --learning_rate_actor 1e-5 \
+    --learning_rate_critic 1e-5 \
+    --learning_rate_encoder 1e-5 \
+    --learning_rate_update 1e-5 \
     --num_training_epochs 4 \
     --max_training_timesteps 3000000 \
     --max_episode_length 128 \

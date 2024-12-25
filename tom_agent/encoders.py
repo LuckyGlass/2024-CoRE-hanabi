@@ -150,6 +150,7 @@ class TokenEncoder(nn.Module):
         Args:
             max_tokens (int): the maximum number of information tokens
         """
+        super().__init__()
         self.max_tokens = max_tokens
         self.device = device
     

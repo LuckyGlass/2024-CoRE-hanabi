@@ -177,7 +177,7 @@ class HanabiPPOAgentWrapper:
         self.tom.load_state_dict(checkpoint['tom'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, **_):
     """
     Args:
         clip_epsilon (float):
@@ -194,6 +194,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         learning_rate_critic (float): The learning rate to train the Critic module.
         learning_rate_encoder (float): The learning rate to train the DiscardPileEncoder and the LastMovesEncoder.
         learning_rate_update (float): The learning rate to train the BeliefUpdateModule.
+        learning_rate_tom (float): The learning rate to train the ToMModule.
         max_episode_length (int): The maximum length of an episode.
         max_information_token (int):
         max_training_timesteps (int): The maximum number of actions throughout the training process.
@@ -233,6 +234,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         learning_rate_critic=learning_rate_critic,
         learning_rate_encoder=learning_rate_encoder,
         learning_rate_update=learning_rate_update,
+        learning_rate_tom=learning_rate_tom,
         max_information_token=max_information_token,
         num_colors=num_colors,
         num_intention=num_intention,

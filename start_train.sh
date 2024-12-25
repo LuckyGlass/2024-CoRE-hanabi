@@ -1,4 +1,4 @@
-python start_train.py \
+python -O start_train.py \
     --device cuda \
     --emb_dim_belief 64 \
     --gamma_history 0.9 \
@@ -25,4 +25,4 @@ python start_train.py \
     --update_interval 2048 \
     --saving_interval 64 \
     --saving_dir checkpoints \
-    --run_name cpu
+    --run_name vanilla

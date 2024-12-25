@@ -1,4 +1,4 @@
-python start_train.py \
+python -O start_train.py \
     --device cuda \
     --emb_dim_belief 64 \
     --gamma_history 0.9 \
@@ -24,6 +24,6 @@ python start_train.py \
     --max_episode_length 128 \
     --update_interval 2048 \
     --saving_interval 64 \
-    --saving_dir checkpoints \
+    --saving_dir checkpoints_reward_for_reveal \
     --run_name reward_for_reveal \
     --reward_type reward_for_reveal

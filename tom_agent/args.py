@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from .utils import count_total_moves
+from typing import Optional
 
 
 @dataclass
@@ -44,3 +45,4 @@ class TrainingArguments:
     saving_dir: str = field(metadata={'help': "The dir to save the checkpoints."})
     run_name: str = field(metadata={'help': "The run name reported to W&B."})
     reward_type: str = field(default='vanilla', metadata={'help': "The type of the reward function (valid values = `vanilla`, `punish_at_last`, `reward_for_reveal`)."})
+    resume_from_checkpoint: Optional[str] = field(default=None, metadata={'help': "The path of the checkpoint."})

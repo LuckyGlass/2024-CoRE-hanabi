@@ -177,7 +177,7 @@ class HanabiPPOAgentWrapper:
         self.tom.load_state_dict(checkpoint['tom'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], **_):
     """
     Args:
         clip_epsilon (float):
@@ -208,6 +208,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         saving_interval (int): The interval (updating steps) between two checkpoints.
         saving_dir (str): The dir to save the checkpoints.
         reward_type (str): The type of the reward function (valid values = `vanilla`, `punish_at_last`, `reward_for_reveal`).
+        resume_from_checkpoint(str | None): the path of the checkpoint.
     """
     print('-' * 10, "Game settings", '-' * 10)
     print("#Players", num_players)
@@ -244,6 +245,8 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         num_ranks=num_ranks,
         num_training_epochs=num_training_epochs,
     )
+    if resume_from_checkpoint is not None:
+        hanabi_agent.load(resume_from_checkpoint)
     count_episode = 0
     cache_loss_intention, cache_loss_belief = [], []
     count_update = 0

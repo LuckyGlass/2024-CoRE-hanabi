@@ -161,7 +161,9 @@ class HanabiPPOAgentWrapper:
             info_token_encoder=self.info_token_encoder.state_dict(),
             update_self_belief=self.update_self_belief.state_dict(),
             update_other_belief=self.update_other_belief.state_dict(),
-            tom=self.tom.state_dict()
+            tom=self.tom.state_dict(),
+            optimizer=self.optimizer.state_dict(),
+            ppo_optimizer=self.ppo_agent.optimizer.state_dict()
         ), save_path)
     
     def load(self, checkpoint_path: str):
@@ -175,6 +177,10 @@ class HanabiPPOAgentWrapper:
         self.update_self_belief.load_state_dict(checkpoint['update_self_belief'])
         self.update_other_belief.load_state_dict(checkpoint['update_other_belief'])
         self.tom.load_state_dict(checkpoint['tom'])
+        if 'optimizer' in checkpoint:
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+        if 'ppo_optimizer' in checkpoint:
+            self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
 def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], **_):

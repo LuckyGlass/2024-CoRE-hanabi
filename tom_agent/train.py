@@ -9,7 +9,7 @@ from tqdm import tqdm
 from typing import Optional, List, Dict, Union, Tuple
 import wandb
 from .PPO import PPOAgent
-from .reward import compute_reward
+from .reward import vanilla_reward, reward_punish_at_last, reward_for_reveal
 from .encoders import (
     CardKnowledgeEncoder,
     DiscardPileEncoder,
@@ -177,7 +177,7 @@ class HanabiPPOAgentWrapper:
         self.tom.load_state_dict(checkpoint['tom'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, **_):
     """
     Args:
         clip_epsilon (float):
@@ -207,6 +207,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         update_interval (int): The interval (timesteps) between two updating steps.
         saving_interval (int): The interval (updating steps) between two checkpoints.
         saving_dir (str): The dir to save the checkpoints.
+        reward_type (str): The type of the reward function (valid values = `vanilla`, `punish_at_last`, `reward_for_reveal`).
     """
     print('-' * 10, "Game settings", '-' * 10)
     print("#Players", num_players)
@@ -257,17 +258,20 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             if state.cur_player() == CHANCE_PLAYER_ID:
                 state.deal_random_card()
                 continue
-            cur_player = state.cur_player()
-            initial_life_tokens = state.life_tokens()
             # Cache initial state
             initial_state = state.copy()
             # Take an action
             action, intention_probs = hanabi_agent.select_action(state, believes[0])
             # Environment
             state.apply_move(action)
-            reward = compute_reward(state, initial_life_tokens)
-            done = state.is_terminal() or episode_time_steps == max_episode_length - 1
             result_state = state.copy()
+            if reward_type == 'vanilla':
+                reward = vanilla_reward(result_state, initial_state.life_tokens())
+            elif reward_type == 'punish_at_last':
+                reward = reward_punish_at_last(result_state)
+            elif reward_type == 'reward_for_reveal':
+                reward = reward_for_reveal(initial_state, result_state, num_ranks, num_colors, num_players, hand_size)
+            done = state.is_terminal() or episode_time_steps == max_episode_length - 1
             believes = hanabi_agent.update_believes(believes, initial_state, result_state, action)
             loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_state, result_state, action, intention_probs, believes)
             cache_loss_intention.append(loss_intention)

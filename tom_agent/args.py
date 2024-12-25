@@ -43,3 +43,4 @@ class TrainingArguments:
     saving_interval: int = field(metadata={'help': "The interval (updating steps) between two checkpoints."})
     saving_dir: str = field(metadata={'help': "The dir to save the checkpoints."})
     run_name: str = field(metadata={'help': "The run name reported to W&B."})
+    reward_type: str = field(default='vanilla', metadata={'help': "The type of the reward function (valid values = `vanilla`, `punish_at_last`, `reward_for_reveal`)."})

@@ -1,3 +1,4 @@
+import numpy as np
 from hanabi_learning_environment import pyhanabi
 from hanabi_learning_environment.pyhanabi import (
     HanabiObservation,
@@ -66,17 +67,21 @@ class DetailedCardKnowledge:
                     instance.plausible[color][rank] = False
         return instance
     
+    def entropy(self) -> float:
+        return np.log2(np.sum(self.plausible)).item()
+    
     def __str__(self):
         return ''.join(f'{ID2COLOR[i]}:' + ''.join(str(j + 1) for j, b in enumerate(arr) if b) + '|' for i, arr in enumerate(self.plausible))
 
 
-def observation_solver(observation: HanabiObservation, num_ranks: int, num_colors: int, num_players: int) -> List[List[DetailedCardKnowledge]]:
+def observation_solver(observation: HanabiObservation, num_ranks: int, num_colors: int, num_players: int, self_eval: bool=False) -> List[List[DetailedCardKnowledge]]:
     """The logic solver for the card information.
     Args:
         observation (HanabiObservation): The observation of the current player provided by the env.
         num_ranks (int): The maximum rank of the cards.
         num_colors (int): The number of colors.
         num_players (int): The number of players.
+        self_eval (bool): Optional, default to False. Whether to only compute the knowledge of +0's cards.
     Returns:
         detailed_card_knowledge (List[List[DetailedCardKnowledge]]): List[0] is Player +0's knowledge of his cards; List[i] (i > 0) is Player +i's knowledge of Player +i's knowledge in Player +0's view.
     """
@@ -94,7 +99,7 @@ def observation_solver(observation: HanabiObservation, num_ranks: int, num_color
     for card in discard_pile:
         modify_superset(num_colors + num_ranks, (1 << (card.color() + num_ranks)) | (1 << card.rank()), -1, public_remaining_cards)
     detailed_knowledge = []
-    for playeri in range(num_players):
+    for playeri in range(1 if self_eval else num_players):
         private_detailed_knowledge = []
         private_remaining_cards = deepcopy(public_remaining_cards)
         for playerj in range(1, num_players):  # ignore +0

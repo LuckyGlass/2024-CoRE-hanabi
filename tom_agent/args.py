@@ -32,7 +32,6 @@ class GameArguments:
 class TrainingArguments:
     discount_factor: float
     clip_epsilon: float
-    alpha_tom_loss: float = field(default=1.0, metadata={'help': "The factor multiplied to the ToM loss."})
     learning_rate_actor: float = field(metadata={'help': "The learning rate to train the Actor module."})
     learning_rate_critic: float = field(metadata={'help': "The learning rate to train the Critic module."})
     learning_rate_encoder: float = field(metadata={'help': "The learning rate to train the DiscardPileEncoder and the LastMovesEncoder."})
@@ -47,3 +46,4 @@ class TrainingArguments:
     run_name: str = field(metadata={'help': "The run name reported to W&B."})
     reward_type: str = field(default='vanilla', metadata={'help': "The type of the reward function (valid values = `vanilla`, `punish_at_last`, `reward_for_reveal`)."})
     resume_from_checkpoint: Optional[str] = field(default=None, metadata={'help': "The path of the checkpoint."})
+    alpha_tom_loss: float = field(default=1.0, metadata={'help': "The factor multiplied to the ToM loss."})

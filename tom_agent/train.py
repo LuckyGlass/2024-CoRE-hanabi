@@ -320,3 +320,4 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             if done:
                 wandb.log(dict(total_reward=episode_total_reward, total_score=episode_total_score), step=global_time_steps)
                 break
+    hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))

@@ -32,6 +32,7 @@ class GameArguments:
 class TrainingArguments:
     discount_factor: float
     clip_epsilon: float
+    alpha_tom_loss: float = field(default=1.0, metadata={'help': "The factor multiplied to the ToM loss."})
     learning_rate_actor: float = field(metadata={'help': "The learning rate to train the Actor module."})
     learning_rate_critic: float = field(metadata={'help': "The learning rate to train the Critic module."})
     learning_rate_encoder: float = field(metadata={'help': "The learning rate to train the DiscardPileEncoder and the LastMovesEncoder."})

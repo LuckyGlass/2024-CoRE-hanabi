@@ -23,7 +23,7 @@ import os
 
 
 class HanabiPPOAgentWrapper:
-    def __init__(self, max_information_token: int, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, **kwargs):
+    def __init__(self, max_information_token: int, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, alpha_tom_loss: float, **kwargs):
         """
         Args:
             clip_epsilon (float):
@@ -63,6 +63,7 @@ class HanabiPPOAgentWrapper:
         self.num_ranks = kwargs['num_ranks']
         self.num_moves = kwargs['num_moves']
         self.hand_size = kwargs['hand_size']
+        self.alpha_tom_loss = alpha_tom_loss
         self.optimizer = torch.optim.AdamW([
             {'params': self.card_knowledge_encoder.parameters(), 'lr': learning_rate_encoder},
             {'params': self.discard_pile_encoder.parameters(), 'lr': learning_rate_encoder},
@@ -142,11 +143,11 @@ class HanabiPPOAgentWrapper:
         pred_intention, pred_belief = self.tom.forward(origin_state_emb, result_state_emb, others_belief, action_id)
         # use MSE loss
         loss_belief_fn = torch.nn.MSELoss(reduction='sum')
-        loss_belief = loss_belief_fn(pred_belief, gt_belief) / (self.num_players - 1)
+        loss_belief = loss_belief_fn(pred_belief, gt_belief) / (self.num_players - 1) * self.alpha_tom_loss
         # use KL divergence
         pred_intention = torch.distributions.Categorical(pred_intention)
         loss_intention = torch.distributions.kl_divergence(pred_intention, gt_intention)
-        loss_intention = loss_intention.mean()
+        loss_intention = loss_intention.mean() * self.alpha_tom_loss
         loss_intention.backward(retain_graph=True)
         loss_belief.backward(retain_graph=True)
         return loss_intention.detach().cpu().item(), loss_belief.detach().cpu().item()
@@ -183,12 +184,13 @@ class HanabiPPOAgentWrapper:
             self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], **_):
     """
     Args:
         clip_epsilon (float):
         device (str):
         discount_factor (float):
+        alpha_tom_loss (float): The factor multiplied to the ToM loss.
         emb_dim_belief (int): The dimension of the embeddings of believes.
         gamma_history (float): The hyperparameter of the exponential average in LastMovesEncoder.
         hand_size (int):
@@ -250,6 +252,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         num_players=num_players,
         num_ranks=num_ranks,
         num_training_epochs=num_training_epochs,
+        alpha_tom_loss=alpha_tom_loss,
     )
     if resume_from_checkpoint is not None:
         hanabi_agent.load(resume_from_checkpoint)

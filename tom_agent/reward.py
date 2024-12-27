@@ -67,3 +67,9 @@ def reward_for_reveal(origin_state: HanabiState, updated_state: HanabiState, num
             if card.rank() == firework[card.color()]:
                 total_reward += 2
     return total_reward
+
+
+def simplest_reward(updated_state: HanabiState):
+    if updated_state.move_history()[-1].scored():
+        return 1
+    return 0

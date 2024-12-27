@@ -1,30 +1,31 @@
 python -O start_train.py \
     --device cuda \
-    --emb_dim_belief 64 \
+    --emb_dim_belief 128 \
     --gamma_history 0.9 \
-    --alpha_tom_loss 0.0 \
     --num_intention 5 \
-    --hidden_dim_actor 128 \
-    --hidden_dim_critic 128 \
-    --hidden_dim_tom 128 \
-    --hidden_dim_update 128 \
+    --hidden_dim_actor 512 \
+    --hidden_dim_critic 512 \
+    --hidden_dim_tom 256 \
+    --hidden_dim_update 512 \
     --num_colors 4 \
     --num_ranks 5 \
     --num_players 2 \
     --hand_size 5 \
     --max_information_token 8 \
-    --discount_factor 0.9 \
-    --clip_epsilon 0.1 \
-    --learning_rate_actor 1e-3 \
-    --learning_rate_critic 1e-4 \
+    --discount_factor 0.95 \
+    --clip_epsilon 0.2 \
+    --learning_rate_actor 1e-4 \
+    --learning_rate_critic 3e-4 \
     --learning_rate_encoder 1e-4 \
     --learning_rate_update 1e-4 \
-    --learning_rate_tom 1e-3 \
+    --learning_rate_tom 3e-4 \
     --num_training_epochs 4 \
-    --max_training_timesteps 3000000 \
+    --max_training_timesteps 1044480 \
     --max_episode_length 128 \
     --update_interval 2048 \
-    --saving_interval 64 \
-    --saving_dir checkpoints_pure_ppo \
-    --run_name pure_ppo \
-    --reward_type reward_for_reveal
+    --saving_interval 32 \
+    --saving_dir checkpoints/simplest_reward \
+    --run_name simplest_reward \
+    --reward_type simplest \
+    --alpha_tom_loss 0.0
+

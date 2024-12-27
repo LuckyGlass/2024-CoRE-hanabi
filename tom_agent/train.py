@@ -9,7 +9,12 @@ from tqdm import tqdm
 from typing import Optional, List, Dict, Union, Tuple
 import wandb
 from .PPO import PPOAgent
-from .reward import vanilla_reward, reward_punish_at_last, reward_for_reveal
+from .reward import (
+    vanilla_reward,
+    reward_punish_at_last,
+    reward_for_reveal,
+    simplest_reward
+)
 from .encoders import (
     CardKnowledgeEncoder,
     DiscardPileEncoder,
@@ -286,6 +291,10 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
                 reward = reward_punish_at_last(result_state)
             elif reward_type == 'reward_for_reveal':
                 reward = reward_for_reveal(initial_state, result_state, num_ranks, num_colors, num_players, hand_size)
+            elif reward_type == 'simplest':
+                reward = simplest_reward(result_state)
+            else:
+                raise ValueError(f"Unknown reward_type = \"{reward_type}\"")
             done = state.is_terminal() or episode_time_steps == max_episode_length - 1
             believes = hanabi_agent.update_believes(believes, initial_state, result_state, action)
             loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_state, result_state, action, intention_probs, believes)

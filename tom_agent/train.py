@@ -265,6 +265,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         believes: torch.Tensor = torch.zeros((game.num_players(), emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
         episode_time_steps = 0
         episode_total_reward = 0
+        episode_total_score = 0
         count_episode += 1
         while max_episode_length == -1 or episode_time_steps < max_episode_length:
             if state.cur_player() == CHANCE_PLAYER_ID:
@@ -277,6 +278,8 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             # Environment
             state.apply_move(action)
             result_state = state.copy()
+            if state.move_history()[-1].scored():
+                episode_total_score += 1
             if reward_type == 'vanilla':
                 reward = vanilla_reward(result_state, initial_state.life_tokens())
             elif reward_type == 'punish_at_last':
@@ -306,5 +309,5 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
                     hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))
             # Terminal
             if done:
-                wandb.log(dict(total_reward=episode_total_reward), step=global_time_steps)
+                wandb.log(dict(total_reward=episode_total_reward, total_score=episode_total_score), step=global_time_steps)
                 break

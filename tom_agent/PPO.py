@@ -30,7 +30,7 @@ class RolloutBuffer:
 
 
 class ActorCriticModule(nn.Module):
-    def __init__(self, num_players: int, num_colors: int, num_ranks: int, hand_size: int, **kwargs):
+    def __init__(self, num_players: int=2, num_colors: int=4, num_ranks: int=5, hand_size: int=5, **kwargs):
         """
         Args:
             emb_dim_state (int): The dimension of the embeddings of states.
@@ -79,7 +79,7 @@ class ActorCriticModule(nn.Module):
 
 
 class PPOAgent:
-    def __init__(self, discount_factor: float, clip_epsilon: float, num_training_epochs: int, learning_rate_actor: float, learning_rate_critic: float, **kwargs):
+    def __init__(self, discount_factor: float=0.95, clip_epsilon: float=0.2, num_training_epochs: int=4, learning_rate_actor: float=1e-4, learning_rate_critic: float=3e-4, **kwargs):
         """
         Args:
             discount_factor (float):

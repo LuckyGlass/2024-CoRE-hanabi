@@ -12,7 +12,7 @@ from .utils import count_total_moves, move2id, count_total_cards
 
 
 class CardKnowledgeEncoder(nn.Module):
-    def __init__(self, num_players: int, num_colors: int, num_ranks: int, hand_size: int, device: str, **_):
+    def __init__(self, num_players: int=2, num_colors: int=4, num_ranks: int=5, hand_size: int=5, device: str='cuda', **_):
         """
         Args:
             num_players (int):
@@ -44,7 +44,7 @@ class CardKnowledgeEncoder(nn.Module):
 
 
 class DiscardPileEncoder(nn.Module):
-    def __init__(self, num_colors: int, num_ranks: int, device: str, **_):
+    def __init__(self, num_colors: int=4, num_ranks: int=5, device: str='cuda', **_):
         """
         Args:
             num_colors (int):
@@ -79,7 +79,7 @@ class DiscardPileEncoder(nn.Module):
 
 
 class FireworkEncoder(nn.Module):
-    def __init__(self, num_colors: int, num_ranks: int, device: str, **_):
+    def __init__(self, num_colors: int=4, num_ranks: int=5, device: str='cuda', **_):
         """
         Args:
             num_colors (int):
@@ -101,7 +101,7 @@ class FireworkEncoder(nn.Module):
 
 
 class LastMovesEncoder(nn.Module):
-    def __init__(self, num_players: int, hand_size: int, num_colors: int, num_ranks: int, num_moves: int, gamma_history: float, device: str, **_):
+    def __init__(self, num_players: int=2, hand_size: int=5, num_colors: int=4, num_ranks: int=5, gamma_history: float=0.9, device: str='cuda', **_):
         """
         Args:
             num_players (int):
@@ -115,9 +115,9 @@ class LastMovesEncoder(nn.Module):
         self.num_colors = num_colors
         self.num_ranks = num_ranks
         self.hand_size = hand_size
-        self.num_moves = num_moves
+        self.num_moves = count_total_moves(self.num_players, self.num_colors, self.num_ranks, self.hand_size)
         self.device = device
-        self.emb_dim_history = num_players * num_moves
+        self.emb_dim_history = num_players * self.num_moves
         self.gamma = gamma_history
     
     def forward(self, last_moves: List[HanabiHistoryItem], cur_player_offset: int):
@@ -145,7 +145,7 @@ class LastMovesEncoder(nn.Module):
 
 
 class TokenEncoder(nn.Module):
-    def __init__(self, max_tokens: int, device: str):
+    def __init__(self, max_tokens: int=8, device: str='cuda'):
         """
         Args:
             max_tokens (int): the maximum number of information tokens

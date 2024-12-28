@@ -23,12 +23,12 @@ from .encoders import (
     TokenEncoder
 )
 from .models import BeliefUpdateModule, ToMModule
-from .utils import move2id, count_total_cards
+from .utils import move2id, count_total_cards, count_total_moves
 import os
 
 
 class HanabiPPOAgentWrapper:
-    def __init__(self, max_information_token: int, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, alpha_tom_loss: float, **kwargs):
+    def __init__(self, max_information_token: int=8, learning_rate_encoder: float=1e-4, learning_rate_update: float=1e-4, learning_rate_tom: float=3e-4, alpha_tom_loss: float=0.1, **kwargs):
         """
         Args:
             clip_epsilon (float):
@@ -66,8 +66,8 @@ class HanabiPPOAgentWrapper:
         self.num_players = kwargs['num_players']
         self.num_colors = kwargs['num_colors']
         self.num_ranks = kwargs['num_ranks']
-        self.num_moves = kwargs['num_moves']
         self.hand_size = kwargs['hand_size']
+        self.num_moves = count_total_moves(self.num_players, self.num_colors, self.num_ranks, self.hand_size)
         self.alpha_tom_loss = alpha_tom_loss
         self.optimizer = torch.optim.AdamW([
             {'params': self.card_knowledge_encoder.parameters(), 'lr': learning_rate_encoder},

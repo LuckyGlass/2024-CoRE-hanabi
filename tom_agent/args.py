@@ -47,3 +47,4 @@ class TrainingArguments:
     reward_type: str = field(default='vanilla', metadata={'help': "The type of the reward function (valid values = `vanilla`, `punish_at_last`, `reward_for_reveal`)."})
     resume_from_checkpoint: Optional[str] = field(default=None, metadata={'help': "The path of the checkpoint."})
     alpha_tom_loss: float = field(default=1.0, metadata={'help': "The factor multiplied to the ToM loss."})
+    test_interval: Optional[int] = field(default=None, metadata={'help': "The interval (updating steps) between two testings."})

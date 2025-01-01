@@ -62,20 +62,25 @@ class ActorCriticModule(nn.Module):
         return action_logprobs, state_values, dist_entropy
 
     @torch.no_grad()
-    def act(self, state: torch.Tensor, belief: torch.Tensor, valid_moves: List[HanabiMove]) -> Tuple[int, float, float, torch.Tensor]:
-        state = state.unsqueeze(0)
-        belief = belief.unsqueeze(0)
-        action_probs, intention_probs = self.actor.forward(state, belief)
-        action_probs = action_probs.flatten()
+    def act(self, states: torch.Tensor, beliefs: torch.Tensor, valid_moves: List[List[HanabiMove]]) -> Tuple[torch.LongTensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            states (torch.Tensor): The embeddings of states in the shape of [Batch, Embed].
+            beliefs (torch.Tensor): The embeddings of believes in the shape of [Batch, Embed].
+            valid_moves (List[List[HanabiMove]]): The list of valid moves.
+        """
+        action_probs, intention_probs = self.actor.forward(states, beliefs)
         valid_mask = torch.zeros_like(action_probs, dtype=torch.bool)
-        valid_move_ids = [move2id(m, self.num_players, self.num_colors, self.num_ranks, self.hand_size) for m in valid_moves]
-        valid_mask[valid_move_ids] = 1
-        action_probs = torch.where(valid_mask, action_probs, 0) / torch.sum(action_probs[valid_move_ids])
+        valid_move_rows = sum([[i] * len(v) for i, v in enumerate(valid_moves)], start=[])
+        valid_move_columns = sum([[move2id(m, self.num_players, self.num_colors, self.num_ranks, self.hand_size) for m in v] for v in valid_moves], start=[])
+        valid_mask[valid_move_rows, valid_move_columns] = 1
+        action_probs[~valid_mask] = 0
+        action_probs = action_probs / action_probs.sum(dim=1, keepdim=True)
         dist = torch.distributions.Categorical(action_probs)
         action = dist.sample()
         action_logprob = dist.log_prob(action)
-        state_val = self.critic.forward(state)
-        return action.item(), action_logprob.item(), state_val.item(), intention_probs
+        state_val = self.critic.forward(states)
+        return action, action_logprob, state_val, intention_probs
 
 
 class PPOAgent:
@@ -116,29 +121,30 @@ class PPOAgent:
         self.hand_size = kwargs['hand_size']
     
     @torch.no_grad()
-    def select_action(self, state: torch.Tensor, belief: torch.Tensor, valid_moves: List[HanabiMove]) -> Tuple[HanabiMove, torch.Tensor]:
-        state = state.to(self.device)
-        action_id, action_logprob, state_val, intention_prob = self.policy_old.act(state, belief, valid_moves)
-        self.buffer.states.append(state.clone())
-        self.buffer.believes.append(belief.clone())
-        self.buffer.actions.append(action_id)
-        self.buffer.logprobs.append(action_logprob)
-        self.buffer.state_values.append(state_val)
-        action = [m for m in valid_moves if move2id(m, self.num_players, self.num_colors, self.num_ranks, self.hand_size) == action_id]
-        assert len(action) == 1
-        return action[0], intention_prob
+    def select_action(self, states: torch.Tensor, beliefs: torch.Tensor, valid_moves: List[List[HanabiMove]]) -> Tuple[List[HanabiMove], torch.Tensor]:
+        """
+        Args:
+            states (torch.Tensor): The embeddings of states in the shape of [Batch, Embed].
+            beliefs (torch.Tensor): The embeddings of believes in the shape of [Batch, Embed].
+            valid_moves (List[List[HanabiMove]]): The lists of valid moves.
+        """
+        states = states.to(self.device)
+        beliefs = beliefs.to(self.device)
+        action_ids, action_logprobs, state_vals, intention_probs = self.policy_old.act(states, beliefs, valid_moves)
+        for state, belief, action_logprob, action_id, state_val in zip(states, beliefs, action_logprobs, action_ids, state_vals):
+            self.buffer.states.append(state.clone())
+            self.buffer.believes.append(belief.clone())
+            self.buffer.logprobs.append(action_logprob.item())
+            self.buffer.actions.append(action_id.item())
+            self.buffer.state_values.append(state_val.item())
+        actions = [[m for m in v if move2id(m, self.num_players, self.num_colors, self.num_ranks, self.hand_size) == action_id] for v, action_id in zip(valid_moves, action_ids)]
+        actions = sum(actions, start=[])
+        assert len(actions) == states.shape[0]
+        return actions, intention_probs
     
     def update(self) -> float:
-        rewards = []
-        discounted_reward = 0
-        for reward, is_terminal in zip(reversed(self.buffer.rewards), reversed(self.buffer.is_terminals)):
-            if is_terminal:
-                discounted_reward = 0
-            discounted_reward = reward + self.discount_factor * discounted_reward
-            rewards.insert(0, discounted_reward)
-        rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
+        rewards = torch.tensor(self.buffer.discounted_rewards, dtype=torch.float32, device=self.device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
-        
         old_states = torch.stack(self.buffer.states, dim=0).to(self.device)
         old_believes = torch.stack(self.buffer.believes, dim=0).to(self.device)
         old_actions = torch.tensor(self.buffer.actions, dtype=torch.long, requires_grad=False, device=self.device)

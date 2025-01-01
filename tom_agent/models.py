@@ -27,6 +27,11 @@ class ActorModule(nn.Module):
         self.output_trans = nn.Linear(hidden_dim_actor, num_moves, device=device)
     
     def forward(self, state: torch.Tensor, belief: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            state (torch.Tensor): The embeddings of states in the shape of [Batch, Embed].
+            belief (torch.Tensor): The embeddings of believes in the shape of [Batch, Embed].
+        """
         input_emb = torch.concat((state, belief), dim=1)
         intention_keys = self.input_trans(input_emb)
         logits = self.intention_mapping(intention_keys)
@@ -53,9 +58,12 @@ class CriticModule(nn.Module):
             nn.Linear(hidden_dim_critic * 4, 1, device=device),
         )
     
-    # TODO
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        return self.critic(state).flatten()
+    def forward(self, states: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            states (torch.Tensor): The embeddings of states in the shape of [Batch, Embed].
+        """
+        return self.critic(states).flatten()
 
 
 class BeliefUpdateModule(nn.Module):
@@ -79,11 +87,18 @@ class BeliefUpdateModule(nn.Module):
         self.update = nn.GRUCell(hidden_dim_update, emb_dim_belief, device=device)
         self.num_moves = num_moves
     
-    def forward(self, belief: torch.Tensor, origin_state: torch.Tensor, result_state: torch.Tensor, action: torch.LongTensor) -> torch.Tensor:
-        action_emb = nn.functional.one_hot(action, num_classes=self.num_moves)
-        input_emb = torch.concat((action_emb, origin_state, result_state), dim=1)
+    def forward(self, beliefs: torch.Tensor, origin_states: torch.Tensor, result_states: torch.Tensor, actions: torch.LongTensor) -> torch.Tensor:
+        """
+        Args:
+            beliefs (torch.Tensor): The embeddings of beliefs in the shape of [Batch, Embed].
+            origin_states (torch.Tensor): The embeddings of states before actions in the shape of [Batch, Embed].
+            result_states (torch.Tensor): The embeddings of states after actions in the shape of [Batch, Embed].
+            actions (torch.LongTensor): The indices of actions in the shape of [Batch].
+        """
+        action_emb = nn.functional.one_hot(actions, num_classes=self.num_moves)
+        input_emb = torch.concat((action_emb, origin_states, result_states), dim=1)
         input_emb = self.input_trans.forward(input_emb)
-        return self.update.forward(input_emb, belief)
+        return self.update.forward(input_emb, beliefs)  # It accepts a batch.
 
 
 class ToMModule(nn.Module):
@@ -105,8 +120,15 @@ class ToMModule(nn.Module):
         )
         self.num_intention = num_intention
         
-    def forward(self, initial_state: torch.Tensor, result_state: torch.Tensor, belief: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        input_emb = torch.concat((initial_state, result_state, belief, action), dim=1)
+    def forward(self, initial_states: torch.Tensor, result_states: torch.Tensor, beliefs: torch.Tensor, action_emb: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            initial_states (torch.Tensor): The embeddings of states before actions in the shape of [Batch, Embed].
+            result_states (torch.Tensor): The embeddings of states after actions in the shape of [Batch, Embed].
+            beliefs (torch.Tensor): The embeddings of beliefs in the shape of [Batch, Embed].
+            action_emb (torch.LongTensor): The indices of actions in the shape of [Batch, Embed].
+        """
+        input_emb = torch.concat((initial_states, result_states, beliefs, action_emb), dim=1)
         output = self.tom.forward(input_emb)
         intention, pred_belief = output[:, :self.num_intention], output[:, self.num_intention:]
         intention = nn.functional.softmax(intention, dim=1)

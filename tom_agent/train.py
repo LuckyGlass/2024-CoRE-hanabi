@@ -83,6 +83,12 @@ class HanabiPPOAgentWrapper:
         self.device = kwargs['device']
     
     def encode_state(self, state: HanabiState, cur_player: Optional[int]=None):
+        """
+        Encode a single state from the perspective of a player.
+        Args:
+            state (HanabiState): the state to encode.
+            cur_player (int): the player to encode the state. If None, the current player is used.
+        """
         if cur_player is None:
             cur_player = state.cur_player()
         observation = state.observation(cur_player)
@@ -98,10 +104,15 @@ class HanabiPPOAgentWrapper:
         assert info_token_emb.shape[-1] == self.info_token_encoder.dim()
         return torch.concat((card_knowledge_emb, discard_pile_emb, firework_emb, last_moves_emb, info_token_emb), dim=0)
     
-    def select_action(self, state: HanabiState, belief: torch.Tensor) -> Tuple[HanabiMove, torch.Tensor]:
-        state_emb = self.encode_state(state)
-        valid_moves = state.observation(state.cur_player()).legal_moves()
-        return self.ppo_agent.select_action(state_emb, belief, valid_moves)
+    def select_action(self, states: List[HanabiState], beliefs: torch.Tensor) -> Tuple[List[HanabiMove], torch.Tensor]:
+        """Batched action selection.
+        Args:
+            states (List[HanabiState]): the states to select actions.
+            beliefs (Tensor): the belief embeddings of the current players.
+        """
+        state_emb = torch.stack([self.encode_state(state) for state in states])
+        valid_moves = [state.observation(state.cur_player()).legal_moves() for state in states]
+        return self.ppo_agent.select_action(state_emb, beliefs, valid_moves)
     
     def update(self):
         res = self.ppo_agent.update()
@@ -110,45 +121,62 @@ class HanabiPPOAgentWrapper:
             self.optimizer.zero_grad()
         return res
     
-    def update_believes(self, believes: List[torch.Tensor], origin_state: HanabiState, result_state: HanabiState, action: HanabiMove) -> torch.Tensor:
+    def update_believes(self, beliefs: torch.Tensor, origin_states: List[HanabiState], result_states: List[HanabiState], actions: List[HanabiMove]) -> torch.Tensor:
         """Update the belief embeddings.
         Args:
-            believes (List[Tensor]): the belief embeddings, indexed as +0, +1, ..., +(N-1).
-            origin_state (HanabiState): the state before the action.
-            result_state (HanabiState): the state after the action.
-            action (HanabiMove): the action.
+            beliefs (Tensor): the belief embeddings of multiple games, indexed as +0, +1, ..., +(N-1).
+            origin_states (List[HanabiState]): the states before the actions.
+            result_states (List[HanabiState]): the states after the actions.
+            actions (List[HanabiMove]): the actions.
         """
-        st_player_id = origin_state.cur_player()  # label the player taking the action as +0
-        origin_state_emb = torch.stack([self.encode_state(origin_state, (st_player_id + player_offset) % self.num_players) for player_offset in range(self.num_players)], dim=0)
-        result_state_emb = torch.stack([self.encode_state(result_state, (st_player_id + player_offset) % self.num_players) for player_offset in range(self.num_players)], dim=0)
-        action_id = move2id(action, self.num_players, self.num_colors, self.num_ranks, self.hand_size)  # TODO: Here we only support 2 players
-        action_id = torch.tensor([action_id] * self.num_players, dtype=torch.long, device=self.device)
-        return torch.concat([self.update_self_belief.forward(believes[:1], origin_state_emb[:1], result_state_emb[:1], action_id[:1]),
-                             self.update_self_belief.forward(believes[1:], origin_state_emb[1:], result_state_emb[1:], action_id[1:])], dim=0)
+        start_player_id = [state.cur_player() for state in origin_states]
+        start_player_origin_state_emb = [self.encode_state(origin_state, i) for origin_state, i in zip(origin_states, start_player_id)]
+        start_player_origin_state_emb = torch.stack(start_player_origin_state_emb)
+        start_player_result_state_emb = [self.encode_state(result_state, i) for result_state, i in zip(result_states, start_player_id)]
+        start_player_result_state_emb = torch.stack(start_player_result_state_emb)
+        other_player_origin_state_emb = [[self.encode_state(origin_state, (i + j) % self.num_players) for j in range(1, self.num_players)] for origin_state, i in zip(origin_states, start_player_id)]
+        other_player_origin_state_emb = torch.stack(sum(other_player_origin_state_emb, []))
+        other_player_result_state_emb = [[self.encode_state(result_state, (i + j) % self.num_players) for j in range(1, self.num_players)] for result_state, i in zip(result_states, start_player_id)]
+        other_player_result_state_emb = torch.stack(sum(other_player_result_state_emb, []))
+        
+        action_id = [move2id(action, self.num_players, self.num_colors, self.num_ranks, self.hand_size) for action in actions]  # TODO: Here we only support 2 players
+        action_id = torch.tensor(action_id, dtype=torch.long, device=self.device)
+        other_player_action_id = action_id.repeat_interleave(self.num_players - 1)
+        start_player_beliefs = beliefs[:, 0, :]
+        other_player_beliefs = beliefs[:, 1:, :].reshape(-1, beliefs.shape[-1])
+        start_player_beliefs = self.update_self_belief.forward(start_player_beliefs, start_player_origin_state_emb, start_player_result_state_emb, action_id)
+        start_player_beliefs = start_player_beliefs[:, None, :]
+        other_player_beliefs = self.update_other_belief.forward(other_player_beliefs, other_player_origin_state_emb, other_player_result_state_emb, other_player_action_id)
+        other_player_beliefs = other_player_beliefs.reshape(-1, self.num_players - 1, beliefs.shape[-1])
+        return torch.cat((start_player_beliefs, other_player_beliefs), dim=1)
     
-    def tom_supervise(self, origin_state: HanabiState, result_state: HanabiState, action: HanabiMove, gt_intention: torch.Tensor, believes: torch.Tensor) -> Tuple[float, float]:
+    def tom_supervise(self, origin_states: List[HanabiState], result_states: List[HanabiState], actions: List[HanabiMove], gt_intention: torch.Tensor, believes: torch.Tensor) -> Tuple[float, float]:
         """
         Args:
-            origin_state (HanabiState): the state before the action.
-            result_state (HanabiState): the state after the action.
-            action (HanabiMove): the action.
-            gt_intention (Tensor): the ground-truth of the intention distribution.
-            believes (Tensor): the embeddings of the believes, starting at the player taking the action.
+            origin_states (List[HanabiState]): the states before the actions.
+            result_states (List[HanabiState]): the states after the actions.
+            actions (List[HanabiMove]): the actions.
+            gt_intention (Tensor): the ground-truth intentions.
+            believes (Tensor): the belief embeddings of multiple games, indexed as +0, +1, ..., +(N-1).
         """
-        gt_belief = believes[0].detach()  # The target needn't consider whether others can predict it.
-        others_belief = believes[1:]
-        gt_belief = gt_belief.repeat((self.num_players - 1, 1))
-        st_player_id = origin_state.cur_player()  # label the player taking the action as +0
-        origin_state_emb = torch.stack([self.encode_state(origin_state, (st_player_id + player_offset) % self.num_players) for player_offset in range(1, self.num_players)], dim=0)
-        result_state_emb = torch.stack([self.encode_state(result_state, (st_player_id + player_offset) % self.num_players) for player_offset in range(1, self.num_players)], dim=0)
-        gt_intention = torch.distributions.Categorical(gt_intention.detach().repeat(self.num_players - 1, 1))  # The target needn't consider whether others can predict it.
-        action_id = move2id(action, self.num_players, self.num_colors, self.num_ranks, self.hand_size)  # TODO: Here only supports 2 players.
-        action_id = torch.tensor([action_id] * (self.num_players - 1), dtype=torch.long, device=self.device)
-        action_id = torch.nn.functional.one_hot(action_id, num_classes=self.num_moves).float()
-        pred_intention, pred_belief = self.tom.forward(origin_state_emb, result_state_emb, others_belief, action_id)
+        gt_belief = believes[:, 0].detach()  # The target needn't consider whether others can predict it.
+        gt_belief = gt_belief.repeat_interleave(self.num_players - 1, dim=0)
+        others_belief = believes[:, 1:].reshape(-1, believes.shape[-1])
+        start_player_id = [origin_state.cur_player() for origin_state in origin_states]
+        other_player_origin_state_emb = [[self.encode_state(origin_state, (i + j) % self.num_players) for j in range(1, self.num_players)] for origin_state, i in zip(origin_states, start_player_id)]
+        other_player_origin_state_emb = torch.stack(sum(other_player_origin_state_emb, []))
+        other_player_result_state_emb = [[self.encode_state(result_state, (i + j) % self.num_players) for j in range(1, self.num_players)] for result_state, i in zip(result_states, start_player_id)]
+        other_player_result_state_emb = torch.stack(sum(other_player_result_state_emb, []))
+        
+        gt_intention = torch.distributions.Categorical(gt_intention.detach().repeat_interleave(self.num_players - 1, dim=0))  # The target needn't consider whether others can predict it.
+        action_id = [move2id(action, self.num_players, self.num_colors, self.num_ranks, self.hand_size) for action in actions]  # TODO: Here we only support 2 players
+        action_id = torch.tensor(action_id, dtype=torch.long, device=self.device)
+        other_player_action_id = action_id.repeat_interleave(self.num_players - 1)
+        other_player_action_id = torch.nn.functional.one_hot(other_player_action_id, num_classes=self.num_moves).float()
+        pred_intention, pred_belief = self.tom.forward(other_player_origin_state_emb, other_player_result_state_emb, others_belief, other_player_action_id)
         # use MSE loss
         loss_belief_fn = torch.nn.MSELoss(reduction='sum')
-        loss_belief = loss_belief_fn(pred_belief, gt_belief) / (self.num_players - 1) * self.alpha_tom_loss
+        loss_belief = loss_belief_fn(pred_belief, gt_belief) / (self.num_players - 1) / len(origin_states) * self.alpha_tom_loss
         # use KL divergence
         pred_intention = torch.distributions.Categorical(pred_intention)
         loss_intention = torch.distributions.kl_divergence(pred_intention, gt_intention)
@@ -189,7 +217,7 @@ class HanabiPPOAgentWrapper:
             self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **_):
     """
     Args:
         clip_epsilon (float):
@@ -222,6 +250,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         saving_dir (str): The dir to save the checkpoints.
         reward_type (str): The type of the reward function (valid values = `vanilla`, `punish_at_last`, `reward_for_reveal`).
         resume_from_checkpoint(str | None): the path of the checkpoint.
+        num_parallel_games (int): The number of parallel games.
     """
     print('-' * 10, "Game settings", '-' * 10)
     print("#Players", num_players)
@@ -264,60 +293,62 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
     count_episode = 0
     cache_loss_intention, cache_loss_belief = [], []
     count_update = 0
+
+    states = [game.new_initial_state() for _ in range(num_parallel_games)]
+    # TODO: better initialization
+    beliefs: torch.Tensor = torch.zeros((num_parallel_games, game.num_players(), emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
+    episode_time_steps = [0 for _ in range(num_parallel_games)]
+    episode_total_reward = [0 for _ in range(num_parallel_games)]
+    episode_total_score = [0 for _ in range(num_parallel_games)]
+    update_time_steps = 0
+
     while global_time_steps <= max_training_timesteps:
-        state = game.new_initial_state()
-        # TODO: better initialization
-        believes: torch.Tensor = torch.zeros((game.num_players(), emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
-        episode_time_steps = 0
-        episode_total_reward = 0
-        episode_total_score = 0
-        count_episode += 1
-        while max_episode_length == -1 or episode_time_steps < max_episode_length:
-            if state.cur_player() == CHANCE_PLAYER_ID:
+        for i, state in enumerate(states):
+            while state.cur_player() == CHANCE_PLAYER_ID:
                 state.deal_random_card()
-                continue
-            # Cache initial state
-            initial_state = state.copy()
-            # Take an action
-            action, intention_probs = hanabi_agent.select_action(state, believes[0])
-            # Environment
+            episode_time_steps[i] += 1
+        initial_states = [state.copy() for state in states]  # Cache initial states
+        actions, intention_probs = hanabi_agent.select_action(states, beliefs)
+        for state, action in zip(states, actions):
             state.apply_move(action)
-            result_state = state.copy()
+        result_states = [state.copy() for state in states]
+        for i, state in enumerate(states):
+            global_time_steps += 1
+            update_time_steps += 1
             if state.move_history()[-1].scored():
-                episode_total_score += 1
+                episode_total_score[i] += 1
             if reward_type == 'vanilla':
-                reward = vanilla_reward(result_state, initial_state.life_tokens())
+                reward = vanilla_reward(result_states[i], initial_states[i].life_tokens())
             elif reward_type == 'punish_at_last':
-                reward = reward_punish_at_last(result_state)
+                reward = reward_punish_at_last(result_states[i])
             elif reward_type == 'reward_for_reveal':
-                reward = reward_for_reveal(initial_state, result_state, num_ranks, num_colors, num_players, hand_size)
+                reward = reward_for_reveal(initial_states[i], result_states[i], num_ranks, num_colors, num_players, hand_size)
             elif reward_type == 'simplest':
-                reward = simplest_reward(result_state)
+                reward = simplest_reward(result_states[i])
             else:
                 raise ValueError(f"Unknown reward_type = \"{reward_type}\"")
-            done = state.is_terminal() or episode_time_steps == max_episode_length - 1
-            believes = hanabi_agent.update_believes(believes, initial_state, result_state, action)
-            loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_state, result_state, action, intention_probs, believes)
-            cache_loss_intention.append(loss_intention)
-            cache_loss_belief.append(loss_belief)
-            believes = believes.roll(-1, 0)
-            # Save `reward` and `done`
+            done = state.is_terminal() or episode_time_steps[i] == max_episode_length
+            episode_total_reward[i] += reward
             hanabi_agent.ppo_agent.buffer.rewards.append(reward)
             hanabi_agent.ppo_agent.buffer.is_terminals.append(done)
-            global_time_steps += 1
-            episode_time_steps += 1
-            episode_total_reward += reward
-            # Update PPO agent
-            if global_time_steps % update_interval == 0:
-                count_update += 1
-                loss_reward = hanabi_agent.update()
-                believes = believes.detach()  # gradients clipped due to interval
-                wandb.log(dict(count_update=count_update, loss_intention=sum(cache_loss_intention)/len(cache_loss_intention), loss_belief=sum(cache_loss_belief)/len(cache_loss_belief), loss_reward=loss_reward), step=global_time_steps)
-                del cache_loss_belief[:], cache_loss_intention[:]
-                if count_update % saving_interval == 0:
-                    hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))
-            # Terminal
             if done:
-                wandb.log(dict(total_reward=episode_total_reward, total_score=episode_total_score), step=global_time_steps)
-                break
+                wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i]), step=global_time_steps)
+                state[i] = game.new_initial_state()
+                episode_time_steps[i] = 0
+                episode_total_reward[i] = 0
+                episode_total_score[i] = 0
+        beliefs = hanabi_agent.update_believes(beliefs, initial_states, result_states, actions)
+        loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_states, result_states, actions, intention_probs, beliefs)
+        cache_loss_intention.append(loss_intention)
+        cache_loss_belief.append(loss_belief)
+        beliefs = beliefs.roll(0, -1, 0)
+        if update_time_steps >= update_interval:
+            count_update += 1
+            loss_reward = hanabi_agent.update()
+            believes = believes.detach()
+            wandb.log(dict(count_update=count_update, loss_intention=sum(cache_loss_intention)/len(cache_loss_intention), loss_belief=sum(cache_loss_belief)/len(cache_loss_belief), loss_reward=loss_reward), step=global_time_steps)
+            update_time_steps = 0
+            del cache_loss_belief[:], cache_loss_intention[:]
+            if count_update % saving_interval == 0:
+                hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))
     hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))

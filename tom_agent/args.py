@@ -48,3 +48,4 @@ class TrainingArguments:
     resume_from_checkpoint: Optional[str] = field(default=None, metadata={'help': "The path of the checkpoint."})
     alpha_tom_loss: float = field(default=1.0, metadata={'help': "The factor multiplied to the ToM loss."})
     test_interval: Optional[int] = field(default=None, metadata={'help': "The interval (updating steps) between two testings."})
+    num_parallel_games: int = field(default=1, metadata={'help': "The number of parallel games."})

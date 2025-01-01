@@ -1,4 +1,4 @@
-bash -O start_train.py \
+python -O start_train.py \
     --device cuda \
     --emb_dim_belief 128 \
     --gamma_history 0.9 \

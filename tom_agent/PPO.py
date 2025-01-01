@@ -7,6 +7,7 @@ from torch import nn
 from typing import Tuple, Dict, Union, List
 from .models import ActorModule, CriticModule
 from .utils import move2id
+from copy import deepcopy
 
 
 class RolloutBuffer:
@@ -142,8 +143,12 @@ class PPOAgent:
         assert len(actions) == states.shape[0]
         return actions, intention_probs
     
-    def update(self) -> float:
-        rewards = torch.tensor(self.buffer.discounted_rewards, dtype=torch.float32, device=self.device)
+    def update(self, num_parallel: int) -> float:
+        rewards_to_go = deepcopy(self.buffer.rewards)
+        for i, is_terminal in enumerate(self.buffer.is_terminals):
+            if not is_terminal and i + num_parallel < len(self.buffer.is_terminals):
+                rewards_to_go[i] += self.discount_factor * rewards_to_go[i + num_parallel]
+        rewards = torch.tensor(rewards_to_go, dtype=torch.float, requires_grad=False, device=self.device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
         old_states = torch.stack(self.buffer.states, dim=0).to(self.device)
         old_believes = torch.stack(self.buffer.believes, dim=0).to(self.device)

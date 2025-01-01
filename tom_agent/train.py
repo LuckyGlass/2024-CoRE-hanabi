@@ -25,6 +25,7 @@ from .encoders import (
 from .models import BeliefUpdateModule, ToMModule
 from .utils import move2id, count_total_cards, count_total_moves
 import os
+import tqdm
 
 
 class HanabiPPOAgentWrapper:
@@ -114,8 +115,8 @@ class HanabiPPOAgentWrapper:
         valid_moves = [state.observation(state.cur_player()).legal_moves() for state in states]
         return self.ppo_agent.select_action(state_emb, beliefs, valid_moves)
     
-    def update(self):
-        res = self.ppo_agent.update()
+    def update(self, num_parallel_games: int=1) -> float:
+        res = self.ppo_agent.update(num_parallel_games)
         if self.optimizer is not None:
             self.optimizer.step()
             self.optimizer.zero_grad()
@@ -302,53 +303,55 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
     episode_total_score = [0 for _ in range(num_parallel_games)]
     update_time_steps = 0
 
-    while global_time_steps <= max_training_timesteps:
-        for i, state in enumerate(states):
-            while state.cur_player() == CHANCE_PLAYER_ID:
-                state.deal_random_card()
-            episode_time_steps[i] += 1
-        initial_states = [state.copy() for state in states]  # Cache initial states
-        actions, intention_probs = hanabi_agent.select_action(states, beliefs)
-        for state, action in zip(states, actions):
-            state.apply_move(action)
-        result_states = [state.copy() for state in states]
-        for i, state in enumerate(states):
-            global_time_steps += 1
-            update_time_steps += 1
-            if state.move_history()[-1].scored():
-                episode_total_score[i] += 1
-            if reward_type == 'vanilla':
-                reward = vanilla_reward(result_states[i], initial_states[i].life_tokens())
-            elif reward_type == 'punish_at_last':
-                reward = reward_punish_at_last(result_states[i])
-            elif reward_type == 'reward_for_reveal':
-                reward = reward_for_reveal(initial_states[i], result_states[i], num_ranks, num_colors, num_players, hand_size)
-            elif reward_type == 'simplest':
-                reward = simplest_reward(result_states[i])
-            else:
-                raise ValueError(f"Unknown reward_type = \"{reward_type}\"")
-            done = state.is_terminal() or episode_time_steps[i] == max_episode_length
-            episode_total_reward[i] += reward
-            hanabi_agent.ppo_agent.buffer.rewards.append(reward)
-            hanabi_agent.ppo_agent.buffer.is_terminals.append(done)
-            if done:
-                wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i]), step=global_time_steps)
-                state[i] = game.new_initial_state()
-                episode_time_steps[i] = 0
-                episode_total_reward[i] = 0
-                episode_total_score[i] = 0
-        beliefs = hanabi_agent.update_believes(beliefs, initial_states, result_states, actions)
-        loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_states, result_states, actions, intention_probs, beliefs)
-        cache_loss_intention.append(loss_intention)
-        cache_loss_belief.append(loss_belief)
-        beliefs = beliefs.roll(0, -1, 0)
-        if update_time_steps >= update_interval:
-            count_update += 1
-            loss_reward = hanabi_agent.update()
-            believes = believes.detach()
-            wandb.log(dict(count_update=count_update, loss_intention=sum(cache_loss_intention)/len(cache_loss_intention), loss_belief=sum(cache_loss_belief)/len(cache_loss_belief), loss_reward=loss_reward), step=global_time_steps)
-            update_time_steps = 0
-            del cache_loss_belief[:], cache_loss_intention[:]
-            if count_update % saving_interval == 0:
-                hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))
+    with tqdm.tqdm(total=max_training_timesteps) as pbar:
+        while global_time_steps <= max_training_timesteps:
+            for i, state in enumerate(states):
+                while state.cur_player() == CHANCE_PLAYER_ID:
+                    state.deal_random_card()
+                episode_time_steps[i] += 1
+            initial_states = [state.copy() for state in states]  # Cache initial states
+            actions, intention_probs = hanabi_agent.select_action(states, beliefs[:, 0, :])
+            for state, action in zip(states, actions):
+                state.apply_move(action)
+            result_states = [state.copy() for state in states]
+            for i, state in enumerate(states):
+                pbar.update(1)
+                global_time_steps += 1
+                update_time_steps += 1
+                if state.move_history()[-1].scored():
+                    episode_total_score[i] += 1
+                if reward_type == 'vanilla':
+                    reward = vanilla_reward(result_states[i], initial_states[i].life_tokens())
+                elif reward_type == 'punish_at_last':
+                    reward = reward_punish_at_last(result_states[i])
+                elif reward_type == 'reward_for_reveal':
+                    reward = reward_for_reveal(initial_states[i], result_states[i], num_ranks, num_colors, num_players, hand_size)
+                elif reward_type == 'simplest':
+                    reward = simplest_reward(result_states[i])
+                else:
+                    raise ValueError(f"Unknown reward_type = \"{reward_type}\"")
+                done = state.is_terminal() or episode_time_steps[i] == max_episode_length
+                episode_total_reward[i] += reward
+                hanabi_agent.ppo_agent.buffer.rewards.append(reward)
+                hanabi_agent.ppo_agent.buffer.is_terminals.append(done)
+                if done:
+                    wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i]), step=global_time_steps)
+                    states[i] = game.new_initial_state()
+                    episode_time_steps[i] = 0
+                    episode_total_reward[i] = 0
+                    episode_total_score[i] = 0
+            beliefs = hanabi_agent.update_believes(beliefs, initial_states, result_states, actions)
+            loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_states, result_states, actions, intention_probs, beliefs)
+            cache_loss_intention.append(loss_intention)
+            cache_loss_belief.append(loss_belief)
+            beliefs = beliefs.roll(-1, dims=1)
+            if update_time_steps >= update_interval:
+                count_update += 1
+                loss_reward = hanabi_agent.update(num_parallel_games)
+                beliefs = beliefs.detach()
+                wandb.log(dict(count_update=count_update, loss_intention=sum(cache_loss_intention)/len(cache_loss_intention), loss_belief=sum(cache_loss_belief)/len(cache_loss_belief), loss_reward=loss_reward), step=global_time_steps)
+                update_time_steps = 0
+                del cache_loss_belief[:], cache_loss_intention[:]
+                if count_update % saving_interval == 0:
+                    hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))
     hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))

@@ -35,6 +35,7 @@ class TrainingArguments:
     clip_epsilon: float
     learning_rate_actor: float = field(metadata={'help': "The learning rate to train the Actor module."})
     learning_rate_critic: float = field(metadata={'help': "The learning rate to train the Critic module."})
+    learning_rate_shared: float = field(metadata={'help': "The learning rate to train the shared transformation."})
     learning_rate_update: float = field(metadata={'help': "The learning rate to train the BeliefUpdateModule."})
     learning_rate_tom: float = field(metadata={'help': "The learning rate to train the ToMModule."})
     num_training_epochs: int = field(metadata={'help': "The number of epochs to train the policy model per updating step."})

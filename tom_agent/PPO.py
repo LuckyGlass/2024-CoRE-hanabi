@@ -98,7 +98,7 @@ class ActorCriticModule(nn.Module):
 
 
 class PPOAgent:
-    def __init__(self, discount_factor: float=0.95, clip_epsilon: float=0.2, num_training_epochs: int=4, learning_rate_actor: float=1e-4, learning_rate_critic: float=3e-4, **kwargs):
+    def __init__(self, discount_factor: float=0.95, clip_epsilon: float=0.2, num_training_epochs: int=4, learning_rate_actor: float=1e-4, learning_rate_critic: float=3e-4, learning_rate_shared: float=3e-4, **kwargs):
         """
         Args:
             discount_factor (float):
@@ -123,6 +123,9 @@ class PPOAgent:
         self.clip_epsilon = clip_epsilon
         self.device = kwargs['device']
         self.num_training_epochs = num_training_epochs
+        self.learning_rate_actor = learning_rate_actor
+        self.learning_rate_critic = learning_rate_critic
+        self.learning_rate_shared = learning_rate_shared
         self.optimizer = torch.optim.AdamW(self.trainable_params())
         self.policy_old = ActorCriticModule(**kwargs)
         self.policy_old.load_state_dict(self.policy.state_dict())
@@ -130,13 +133,12 @@ class PPOAgent:
         self.num_colors = kwargs['num_colors']
         self.num_ranks = kwargs['num_ranks']
         self.hand_size = kwargs['hand_size']
-        self.learning_rate_actor = learning_rate_actor
-        self.learning_rate_critic = learning_rate_critic
     
     def trainable_params(self):
         return [
-            {'params': list(self.policy.actor.parameters()) + list(self.policy.shared.parameters()), 'lr': self.learning_rate_actor},
-            {'params': list(self.policy.critic.parameters()) + list(self.policy.shared.parameters()), 'lr': self.learning_rate_critic}
+            {'params': self.policy.actor.parameters(), 'lr': self.learning_rate_actor},
+            {'params': self.policy.critic.parameters(), 'lr': self.learning_rate_critic},
+            {'params': self.policy.shared.parameters(), 'lr': self.learning_rate_shared}
         ]
     
     @torch.no_grad()

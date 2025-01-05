@@ -219,7 +219,7 @@ class HanabiPPOAgentWrapper:
                 self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **_):
     """
     Args:
         clip_epsilon (float):
@@ -231,10 +231,12 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         hand_size (int):
         hidden_dim_actor (int): It decides the width of the Actor module.
         hidden_dim_critic (int): It decides the width of the Critic module.
+        hidden_dim_shared (int): The output dimension of the shared transformation.
         hidden_dim_tom (int): It decides the width of the ToM module.
         hidden_dim_update (int): It decides the width of the belief-update module.
         learning_rate_actor (float): The learning rate to train the Actor module.
         learning_rate_critic (float): The learning rate to train the Critic module.
+        learning_rate_shared (float): The learning rate to train the shared transformation.
         learning_rate_update (float): The learning rate to train the BeliefUpdateModule.
         learning_rate_tom (float): The learning rate to train the ToMModule.
         max_episode_length (int): The maximum length of an episode.
@@ -273,11 +275,13 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         hand_size=hand_size,
         hidden_dim_actor=hidden_dim_actor,
         hidden_dim_critic=hidden_dim_critic,
+        hidden_dim_shared=hidden_dim_shared,
         hidden_dim_tom=hidden_dim_tom,
         hidden_dim_update=hidden_dim_update,
         learning_rate_actor=learning_rate_actor,
         learning_rate_critic=learning_rate_critic,
         learning_rate_update=learning_rate_update,
+        learning_rate_shared=learning_rate_shared,
         learning_rate_tom=learning_rate_tom,
         max_information_token=max_information_token,
         num_colors=num_colors,

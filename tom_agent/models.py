@@ -11,6 +11,7 @@ class SharedTransformation(nn.Module):
             emb_dim_belief (int): The dimension of belief embedding.
             hidden_dim_shared (int): The output dimenison.
         """
+        super().__init__()
         self.trans = nn.Sequential(
             self._construct(emb_dim_belief + emb_dim_state, 4 * hidden_dim_shared, device),
             self._construct(4 * hidden_dim_shared, 4 * hidden_dim_shared, device),

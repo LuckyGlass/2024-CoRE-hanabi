@@ -5,6 +5,7 @@ python -O start_train.py \
     --num_intention 5 \
     --hidden_dim_actor 512 \
     --hidden_dim_critic 512 \
+    --hidden_dim_shared 512 \
     --hidden_dim_tom 256 \
     --hidden_dim_update 512 \
     --num_colors 4 \
@@ -16,16 +17,17 @@ python -O start_train.py \
     --clip_epsilon 0.2 \
     --learning_rate_actor 1e-4 \
     --learning_rate_critic 3e-4 \
-    --learning_rate_encoder 1e-4 \
+    --learning_rate_shared 3e-4 \
     --learning_rate_update 1e-4 \
     --learning_rate_tom 3e-4 \
     --num_training_epochs 4 \
     --max_training_timesteps 208896 \
     --max_episode_length 128 \
-    --update_interval 2048 \
+    --update_interval 4096 \
     --saving_interval 32 \
-    --saving_dir checkpoints/simplest_reward \
-    --run_name simplest_reward \
+    --saving_dir checkpoints/upgrade \
+    --run_name upgrade \
     --reward_type simplest \
-    --alpha_tom_loss 0.1
+    --alpha_tom_loss 0.1 \
+    --num_parallel_games 50
 

@@ -13,10 +13,10 @@ class SharedTransformation(nn.Module):
         """
         super().__init__()
         self.trans = nn.Sequential(
-            self._construct(emb_dim_belief + emb_dim_state, 4 * hidden_dim_shared, device),
-            self._construct(4 * hidden_dim_shared, 4 * hidden_dim_shared, device),
-            self._construct(4 * hidden_dim_shared, 4 * hidden_dim_shared, device),
-            self._construct(4 * hidden_dim_shared, hidden_dim_shared, device)
+            self._construct(emb_dim_belief + emb_dim_state, 2 * hidden_dim_shared, device),
+            self._construct(2 * hidden_dim_shared, 4 * hidden_dim_shared, device),
+            self._construct(4 * hidden_dim_shared, 2 * hidden_dim_shared, device),
+            self._construct(2 * hidden_dim_shared, hidden_dim_shared, device)
         )
     
     def _construct(self, din: int, dout: int, device: str):

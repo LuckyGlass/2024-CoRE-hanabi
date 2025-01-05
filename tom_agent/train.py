@@ -113,7 +113,7 @@ class HanabiPPOAgentWrapper:
             states (List[HanabiState]): Batched states before selecting actions.
             beliefs (Tensor): Batched belief embeddings of all the players, [Batch, Player, Embed].
         """
-        state_emb = torch.stack([self.encode_state_all(state) for state in states])
+        state_emb = torch.stack([self.encode_all_states(state) for state in states])
         valid_moves = [state.observation(state.cur_player()).legal_moves() for state in states]
         return self.ppo_agent.select_action(state_emb, beliefs, valid_moves)
     

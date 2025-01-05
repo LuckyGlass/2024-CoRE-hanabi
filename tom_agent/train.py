@@ -60,6 +60,10 @@ class HanabiPPOAgentWrapper:
         self.info_token_encoder = TokenEncoder(max_information_token, kwargs['device'])
         emb_dim_state = self.card_knowledge_encoder.dim() + self.discard_pile_encoder.dim() + self.firework_encoder.dim() + self.last_moves_encoder.dim() + self.info_token_encoder.dim()
         self.ppo_agent = PPOAgent(emb_dim_state=emb_dim_state, **kwargs)
+        if do_train:
+            self.ppo_agent.policy.train()
+        else:
+            self.ppo_agent.policy.eval()
         self.update_self_belief = BeliefUpdateModule(emb_dim_state=emb_dim_state, **kwargs)
         self.update_other_belief = BeliefUpdateModule(emb_dim_state=emb_dim_state, **kwargs)
         self.tom = ToMModule(emb_dim_state=emb_dim_state, **kwargs)
@@ -291,6 +295,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         num_ranks=num_ranks,
         num_training_epochs=num_training_epochs,
         alpha_tom_loss=alpha_tom_loss,
+        do_train=True
     )
     if resume_from_checkpoint is not None:
         hanabi_agent.load(resume_from_checkpoint)

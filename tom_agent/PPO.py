@@ -129,6 +129,7 @@ class PPOAgent:
         self.optimizer = torch.optim.AdamW(self.trainable_params())
         self.policy_old = ActorCriticModule(**kwargs)
         self.policy_old.load_state_dict(self.policy.state_dict())
+        self.policy_old.eval()
         self.num_players = kwargs['num_players']
         self.num_colors = kwargs['num_colors']
         self.num_ranks = kwargs['num_ranks']
@@ -197,6 +198,7 @@ class PPOAgent:
         
         # Clone policy & clear buffer
         self.policy_old.load_state_dict(self.policy.state_dict())
+        self.policy_old.eval()
         self.buffer.clear()
         return res
     

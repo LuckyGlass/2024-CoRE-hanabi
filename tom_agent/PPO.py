@@ -82,7 +82,7 @@ class ActorCriticModule(nn.Module):
         """
         num_batches = states.shape[0]
         emb_dim_state, emb_dim_belief = states.shape[-1], beliefs.shape[-1]
-        inputs = self.shared(states.reshape(-1, emb_dim_state), beliefs.reshape(-1, emb_dim_belief))
+        inputs = self.shared(states.reshape(-1, emb_dim_state), beliefs.reshape(-1, emb_dim_belief)).reshape(num_batches, self.num_players, -1)
         action_probs, intention_probs = self.actor.forward(inputs[:, 0, :])
         valid_mask = torch.zeros_like(action_probs, dtype=torch.bool)
         valid_move_rows = sum([[i] * len(v) for i, v in enumerate(valid_moves)], start=[])

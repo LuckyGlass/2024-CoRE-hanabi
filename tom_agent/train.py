@@ -29,7 +29,7 @@ import tqdm
 
 
 class HanabiPPOAgentWrapper:
-    def __init__(self, max_information_token: int=8, learning_rate_encoder: float=1e-4, learning_rate_update: float=1e-4, learning_rate_tom: float=3e-4, alpha_tom_loss: float=0.1, **kwargs):
+    def __init__(self, max_information_token: int=8, learning_rate_update: float=1e-4, learning_rate_tom: float=3e-4, alpha_tom_loss: float=0.1, do_train: bool=False, **kwargs):
         """
         Args:
             clip_epsilon (float):
@@ -44,7 +44,6 @@ class HanabiPPOAgentWrapper:
             hidden_dim_update (int): It decides the width of the belief-update module.
             learning_rate_actor (float): The learning rate to train the Actor module.
             learning_rate_critic (float): The learning rate to train the Critic module.
-            learning_rate_encoder (float): The learning rate to train the DiscardPileEncoder and the LastMovesEncoder.
             learning_rate_update (float): The learning rate to train the BeliefUpdateModule.
             max_information_token (int):
             num_colors (int):
@@ -70,17 +69,17 @@ class HanabiPPOAgentWrapper:
         self.hand_size = kwargs['hand_size']
         self.num_moves = count_total_moves(self.num_players, self.num_colors, self.num_ranks, self.hand_size)
         self.alpha_tom_loss = alpha_tom_loss
-        self.optimizer = torch.optim.AdamW([
-            {'params': self.card_knowledge_encoder.parameters(), 'lr': learning_rate_encoder},
-            {'params': self.discard_pile_encoder.parameters(), 'lr': learning_rate_encoder},
-            {'params': self.firework_encoder.parameters(), 'lr': learning_rate_encoder},
-            {'params': self.last_moves_encoder.parameters(), 'lr': learning_rate_encoder},
-            {'params': self.info_token_encoder.parameters(), 'lr': learning_rate_encoder},
-            {'params': self.update_self_belief.parameters(), 'lr': learning_rate_update},
-            {'params': self.update_other_belief.parameters(), 'lr': learning_rate_update},
-            {'params': self.tom.parameters(), 'lr': learning_rate_tom}
-        ])
-        self.optimizer.zero_grad()
+        self.do_train = do_train
+        if self.do_train:
+            self.optimizer = torch.optim.AdamW([
+                {'params': self.update_self_belief.parameters(), 'lr': learning_rate_update},
+                {'params': self.update_other_belief.parameters(), 'lr': learning_rate_update},
+                {'params': self.tom.parameters(), 'lr': learning_rate_tom},
+                *self.ppo_agent.trainable_params()
+            ])
+            self.optimizer.zero_grad()
+        else:
+            self.optimizer = None
         self.device = kwargs['device']
     
     def encode_state(self, state: HanabiState, cur_player: Optional[int]=None):
@@ -94,15 +93,10 @@ class HanabiPPOAgentWrapper:
             cur_player = state.cur_player()
         observation = state.observation(cur_player)
         card_knowledge_emb = self.card_knowledge_encoder.forward(observation)
-        assert card_knowledge_emb.shape[-1] == self.card_knowledge_encoder.dim()
         discard_pile_emb = self.discard_pile_encoder.forward(observation.discard_pile())
-        assert discard_pile_emb.shape[-1] == self.discard_pile_encoder.dim()
         firework_emb = self.firework_encoder.forward(observation.fireworks())
-        assert firework_emb.shape[-1] == self.firework_encoder.dim()
         last_moves_emb = self.last_moves_encoder.forward(observation.last_moves(), cur_player)
-        assert last_moves_emb.shape[-1] == self.last_moves_encoder.dim()
         info_token_emb = self.info_token_encoder.forward(observation.information_tokens())
-        assert info_token_emb.shape[-1] == self.info_token_encoder.dim()
         return torch.concat((card_knowledge_emb, discard_pile_emb, firework_emb, last_moves_emb, info_token_emb), dim=0)
     
     def select_action(self, states: List[HanabiState], beliefs: torch.Tensor) -> Tuple[List[HanabiMove], torch.Tensor]:
@@ -116,19 +110,19 @@ class HanabiPPOAgentWrapper:
         return self.ppo_agent.select_action(state_emb, beliefs, valid_moves)
     
     def update(self, num_parallel_games: int=1) -> float:
-        res = self.ppo_agent.update(num_parallel_games)
         if self.optimizer is not None:
             self.optimizer.step()
             self.optimizer.zero_grad()
+        res = self.ppo_agent.update(num_parallel_games)
         return res
     
     def update_believes(self, beliefs: torch.Tensor, origin_states: List[HanabiState], result_states: List[HanabiState], actions: List[HanabiMove]) -> torch.Tensor:
-        """Update the belief embeddings.
+        """Update the belief embeddings. Notice that it doesn't move to the next player.
         Args:
-            beliefs (Tensor): the belief embeddings of multiple games, indexed as +0, +1, ..., +(N-1).
-            origin_states (List[HanabiState]): the states before the actions.
-            result_states (List[HanabiState]): the states after the actions.
-            actions (List[HanabiMove]): the actions.
+            beliefs (Tensor): The belief embeddings of multiple games. The players are indexed as +0, +1, ..., +(N-1) and Player +0 is the player taking the action.
+            origin_states (List[HanabiState]): The states before the actions.
+            result_states (List[HanabiState]): The states after the actions.
+            actions (List[HanabiMove]): The actions.
         """
         start_player_id = [state.cur_player() for state in origin_states]
         start_player_origin_state_emb = [self.encode_state(origin_state, i) for origin_state, i in zip(origin_states, start_player_id)]
@@ -187,19 +181,32 @@ class HanabiPPOAgentWrapper:
         return loss_intention.detach().cpu().item(), loss_belief.detach().cpu().item()
 
     def save(self, save_path: str):
-        torch.save(dict(
-            ppo_policy=self.ppo_agent.policy.state_dict(),
-            card_knowledge_encoder=self.card_knowledge_encoder.state_dict(),
-            discard_pile_encoder=self.discard_pile_encoder.state_dict(),
-            firework_encoder=self.firework_encoder.state_dict(),
-            last_moves_encoder=self.last_moves_encoder.state_dict(),
-            info_token_encoder=self.info_token_encoder.state_dict(),
-            update_self_belief=self.update_self_belief.state_dict(),
-            update_other_belief=self.update_other_belief.state_dict(),
-            tom=self.tom.state_dict(),
-            optimizer=self.optimizer.state_dict(),
-            ppo_optimizer=self.ppo_agent.optimizer.state_dict()
-        ), save_path)
+        if self.do_train:
+            torch.save(dict(
+                ppo_policy=self.ppo_agent.policy.state_dict(),
+                card_knowledge_encoder=self.card_knowledge_encoder.state_dict(),
+                discard_pile_encoder=self.discard_pile_encoder.state_dict(),
+                firework_encoder=self.firework_encoder.state_dict(),
+                last_moves_encoder=self.last_moves_encoder.state_dict(),
+                info_token_encoder=self.info_token_encoder.state_dict(),
+                update_self_belief=self.update_self_belief.state_dict(),
+                update_other_belief=self.update_other_belief.state_dict(),
+                tom=self.tom.state_dict(),
+                optimizer=self.optimizer.state_dict(),
+                ppo_optimizer=self.ppo_agent.optimizer.state_dict()
+            ), save_path)
+        else:
+            torch.save(dict(
+                ppo_policy=self.ppo_agent.policy.state_dict(),
+                card_knowledge_encoder=self.card_knowledge_encoder.state_dict(),
+                discard_pile_encoder=self.discard_pile_encoder.state_dict(),
+                firework_encoder=self.firework_encoder.state_dict(),
+                last_moves_encoder=self.last_moves_encoder.state_dict(),
+                info_token_encoder=self.info_token_encoder.state_dict(),
+                update_self_belief=self.update_self_belief.state_dict(),
+                update_other_belief=self.update_other_belief.state_dict(),
+                tom=self.tom.state_dict(),
+            ), save_path)
     
     def load(self, checkpoint_path: str):
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
@@ -212,13 +219,14 @@ class HanabiPPOAgentWrapper:
         self.update_self_belief.load_state_dict(checkpoint['update_self_belief'])
         self.update_other_belief.load_state_dict(checkpoint['update_other_belief'])
         self.tom.load_state_dict(checkpoint['tom'])
-        if 'optimizer' in checkpoint:
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
-        if 'ppo_optimizer' in checkpoint:
-            self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
+        if self.do_train:
+            if 'optimizer' in checkpoint:
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+            if 'ppo_optimizer' in checkpoint:
+                self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_encoder: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **_):
     """
     Args:
         clip_epsilon (float):
@@ -234,7 +242,6 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         hidden_dim_update (int): It decides the width of the belief-update module.
         learning_rate_actor (float): The learning rate to train the Actor module.
         learning_rate_critic (float): The learning rate to train the Critic module.
-        learning_rate_encoder (float): The learning rate to train the DiscardPileEncoder and the LastMovesEncoder.
         learning_rate_update (float): The learning rate to train the BeliefUpdateModule.
         learning_rate_tom (float): The learning rate to train the ToMModule.
         max_episode_length (int): The maximum length of an episode.
@@ -277,7 +284,6 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         hidden_dim_update=hidden_dim_update,
         learning_rate_actor=learning_rate_actor,
         learning_rate_critic=learning_rate_critic,
-        learning_rate_encoder=learning_rate_encoder,
         learning_rate_update=learning_rate_update,
         learning_rate_tom=learning_rate_tom,
         max_information_token=max_information_token,
@@ -291,17 +297,16 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
     )
     if resume_from_checkpoint is not None:
         hanabi_agent.load(resume_from_checkpoint)
-    count_episode = 0
     cache_loss_intention, cache_loss_belief = [], []
     count_update = 0
 
     states = [game.new_initial_state() for _ in range(num_parallel_games)]
     # TODO: better initialization
-    beliefs: torch.Tensor = torch.zeros((num_parallel_games, game.num_players(), emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
+    beliefs: torch.Tensor = torch.zeros((num_parallel_games, num_players, emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)
     episode_time_steps = [0 for _ in range(num_parallel_games)]
     episode_total_reward = [0 for _ in range(num_parallel_games)]
     episode_total_score = [0 for _ in range(num_parallel_games)]
-    update_time_steps = 0
+    play_steps = 0
 
     with tqdm.tqdm(total=max_training_timesteps) as pbar:
         while global_time_steps <= max_training_timesteps:
@@ -317,7 +322,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             for i, state in enumerate(states):
                 pbar.update(1)
                 global_time_steps += 1
-                update_time_steps += 1
+                play_steps += 1
                 if state.move_history()[-1].scored():
                     episode_total_score[i] += 1
                 if reward_type == 'vanilla':
@@ -335,8 +340,9 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
                 hanabi_agent.ppo_agent.buffer.rewards.append(reward)
                 hanabi_agent.ppo_agent.buffer.is_terminals.append(done)
                 if done:
-                    wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i]), step=global_time_steps)
+                    wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i], play_steps=episode_time_steps[i]), step=global_time_steps)
                     states[i] = game.new_initial_state()
+                    beliefs[i, :, :] = torch.zeros((num_players, emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)  # TODO: maybe better initialization
                     episode_time_steps[i] = 0
                     episode_total_reward[i] = 0
                     episode_total_score[i] = 0
@@ -345,12 +351,12 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             cache_loss_intention.append(loss_intention)
             cache_loss_belief.append(loss_belief)
             beliefs = beliefs.roll(-1, dims=1)
-            if update_time_steps >= update_interval:
+            if play_steps >= update_interval:
                 count_update += 1
                 loss_reward = hanabi_agent.update(num_parallel_games)
                 beliefs = beliefs.detach()
                 wandb.log(dict(count_update=count_update, loss_intention=sum(cache_loss_intention)/len(cache_loss_intention), loss_belief=sum(cache_loss_belief)/len(cache_loss_belief), loss_reward=loss_reward), step=global_time_steps)
-                update_time_steps = 0
+                play_steps = 0
                 del cache_loss_belief[:], cache_loss_intention[:]
                 if count_update % saving_interval == 0:
                     hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))

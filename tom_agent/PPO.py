@@ -54,8 +54,8 @@ class ActorCriticModule(nn.Module):
         self.num_ranks = num_ranks
         self.hand_size = hand_size
     
-    def evaluate(self, states: torch.Tensor, believes: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        action_probs, _ = self.actor.forward(states, believes)
+    def evaluate(self, states: torch.Tensor, beliefs: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        action_probs, _ = self.actor.forward(states, beliefs)
         dist = torch.distributions.Categorical(action_probs)
         action_logprobs = dist.log_prob(actions)
         dist_entropy = dist.entropy()
@@ -110,16 +110,21 @@ class PPOAgent:
         self.clip_epsilon = clip_epsilon
         self.device = kwargs['device']
         self.num_training_epochs = num_training_epochs
-        self.optimizer = torch.optim.AdamW([
-            {'params': self.policy.actor.parameters(), 'lr': learning_rate_actor},
-            {'params': self.policy.critic.parameters(), 'lr': learning_rate_critic}
-        ])
+        self.optimizer = torch.optim.AdamW(self.trainable_params())
         self.policy_old = ActorCriticModule(**kwargs)
         self.policy_old.load_state_dict(self.policy.state_dict())
         self.num_players = kwargs['num_players']
         self.num_colors = kwargs['num_colors']
         self.num_ranks = kwargs['num_ranks']
         self.hand_size = kwargs['hand_size']
+        self.learning_rate_actor = learning_rate_actor
+        self.learning_rate_critic = learning_rate_critic
+    
+    def trainable_params(self):
+        return [
+            {'params': self.policy.actor.parameters(), 'lr': self.learning_rate_actor},
+            {'params': self.policy.critic.parameters(), 'lr': self.learning_rate_critic}
+        ]
     
     @torch.no_grad()
     def select_action(self, states: torch.Tensor, beliefs: torch.Tensor, valid_moves: List[List[HanabiMove]]) -> Tuple[List[HanabiMove], torch.Tensor]:

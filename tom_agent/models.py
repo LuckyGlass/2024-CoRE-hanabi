@@ -53,7 +53,7 @@ class ActorModule(nn.Module):
             nn.BatchNorm1d(4 * hidden_dim_actor, device=device),
             nn.Linear(4 * hidden_dim_actor, 4 * hidden_dim_actor, device=device),
             nn.GELU(),
-            nn.BatchNorm1d(4 * hidden_dim_actor),
+            nn.BatchNorm1d(4 * hidden_dim_actor, device=device),
             nn.Linear(4 * hidden_dim_actor, hidden_dim_actor, device=device),
             nn.GELU()
         )
@@ -88,10 +88,10 @@ class CriticModule(nn.Module):
         self.critic = nn.Sequential(
             nn.Linear(hidden_dim_shared * num_players, 2 * hidden_dim_critic, device=device),
             nn.GELU(),
-            nn.BatchNorm1d(2 * hidden_dim_critic),
+            nn.BatchNorm1d(2 * hidden_dim_critic, device=device),
             nn.Linear(2 * hidden_dim_critic, hidden_dim_critic, device=device),
             nn.GELU(),
-            nn.BatchNorm1d(hidden_dim_critic),
+            nn.BatchNorm1d(hidden_dim_critic, device=device),
             nn.Linear(hidden_dim_critic, 1, device=device),
         )
     

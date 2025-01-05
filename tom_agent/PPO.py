@@ -5,7 +5,7 @@ from hanabi_learning_environment.pyhanabi import (
 )
 from torch import nn
 from typing import Tuple, Dict, Union, List
-from .models import ActorModule, CriticModule
+from .models import ActorModule, CriticModule, SharedTransformation
 from .utils import move2id
 from copy import deepcopy
 
@@ -47,30 +47,43 @@ class ActorCriticModule(nn.Module):
             device (str):
         """
         super().__init__()
+        self.shared = SharedTransformation(**kwargs)
         self.actor = ActorModule(**kwargs)
-        self.critic = CriticModule(**kwargs)
+        self.critic = CriticModule(num_players=num_players, **kwargs)
         self.num_players = num_players
         self.num_colors = num_colors
         self.num_ranks = num_ranks
         self.hand_size = hand_size
     
     def evaluate(self, states: torch.Tensor, beliefs: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        action_probs, _ = self.actor.forward(states, beliefs)
+        """
+        Args:
+            states (Tensor): Batched state embedding for all the players, [Batch, Player, Embed]; Player index starts at the player taking the action.
+            beliefs (Tensor): Batched belief embedding for all the players, [Batch, Player, Embed]; Player index starts at the player taking the action.
+            actions (LongTensor): Batched action IDs, [Batch].
+        """
+        num_batches = states.shape[0]
+        emb_dim_state, emb_dim_belief = states.shape[-1], beliefs.shape[-1]
+        inputs = self.shared(states.reshape(-1, emb_dim_state), beliefs.reshape(-1, emb_dim_belief)).reshape(num_batches, self.num_players, -1)  # [Batch, Player, Embed]
+        action_probs, _ = self.actor.forward(inputs[:, 0, :])
         dist = torch.distributions.Categorical(action_probs)
         action_logprobs = dist.log_prob(actions)
         dist_entropy = dist.entropy()
-        state_values = self.critic.forward(states)
+        state_values = self.critic.forward(inputs.reshape(num_batches, -1))
         return action_logprobs, state_values, dist_entropy
 
     @torch.no_grad()
     def act(self, states: torch.Tensor, beliefs: torch.Tensor, valid_moves: List[List[HanabiMove]]) -> Tuple[torch.LongTensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
-            states (torch.Tensor): The embeddings of states in the shape of [Batch, Embed].
-            beliefs (torch.Tensor): The embeddings of believes in the shape of [Batch, Embed].
+            states (Tensor): Batched state embedding for all the players, [Batch, Player, Embed]; Player index starts at the player taking the action.
+            beliefs (Tensor): Batched belief embedding for all the players, [Batch, Player, Embed]; Player index starts at the player taking the action.
             valid_moves (List[List[HanabiMove]]): The list of valid moves.
         """
-        action_probs, intention_probs = self.actor.forward(states, beliefs)
+        num_batches = states.shape[0]
+        emb_dim_state, emb_dim_belief = states.shape[-1], beliefs.shape[-1]
+        inputs = self.shared(states.reshape(-1, emb_dim_state), beliefs.reshape(-1, emb_dim_belief))
+        action_probs, intention_probs = self.actor.forward(inputs[:, 0, :])
         valid_mask = torch.zeros_like(action_probs, dtype=torch.bool)
         valid_move_rows = sum([[i] * len(v) for i, v in enumerate(valid_moves)], start=[])
         valid_move_columns = sum([[move2id(m, self.num_players, self.num_colors, self.num_ranks, self.hand_size) for m in v] for v in valid_moves], start=[])
@@ -80,7 +93,7 @@ class ActorCriticModule(nn.Module):
         dist = torch.distributions.Categorical(action_probs)
         action = dist.sample()
         action_logprob = dist.log_prob(action)
-        state_val = self.critic.forward(states)
+        state_val = self.critic.forward(inputs.reshape(num_batches, -1))
         return action, action_logprob, state_val, intention_probs
 
 
@@ -122,17 +135,17 @@ class PPOAgent:
     
     def trainable_params(self):
         return [
-            {'params': self.policy.actor.parameters(), 'lr': self.learning_rate_actor},
-            {'params': self.policy.critic.parameters(), 'lr': self.learning_rate_critic}
+            {'params': list(self.policy.actor.parameters()) + list(self.policy.shared.parameters()), 'lr': self.learning_rate_actor},
+            {'params': list(self.policy.critic.parameters()) + list(self.policy.shared.parameters()), 'lr': self.learning_rate_critic}
         ]
     
     @torch.no_grad()
     def select_action(self, states: torch.Tensor, beliefs: torch.Tensor, valid_moves: List[List[HanabiMove]]) -> Tuple[List[HanabiMove], torch.Tensor]:
         """
         Args:
-            states (torch.Tensor): The embeddings of states in the shape of [Batch, Embed].
-            beliefs (torch.Tensor): The embeddings of believes in the shape of [Batch, Embed].
-            valid_moves (List[List[HanabiMove]]): The lists of valid moves.
+            states (Tensor): Batched state embedding for all the players, [Batch, Player, Embed]; Player index starts at the player taking the action.
+            beliefs (Tensor): Batched belief embedding for all the players, [Batch, Player, Embed]; Player index starts at the player taking the action.
+            valid_moves (List[List[HanabiMove]]): The list of valid moves.
         """
         states = states.to(self.device)
         beliefs = beliefs.to(self.device)
@@ -145,7 +158,6 @@ class PPOAgent:
             self.buffer.state_values.append(state_val.item())
         actions = [[m for m in v if move2id(m, self.num_players, self.num_colors, self.num_ranks, self.hand_size) == action_id] for v, action_id in zip(valid_moves, action_ids)]
         actions = sum(actions, start=[])
-        assert len(actions) == states.shape[0]
         return actions, intention_probs
     
     def update(self, num_parallel: int) -> float:

@@ -99,13 +99,21 @@ class HanabiPPOAgentWrapper:
         info_token_emb = self.info_token_encoder.forward(observation.information_tokens())
         return torch.concat((card_knowledge_emb, discard_pile_emb, firework_emb, last_moves_emb, info_token_emb), dim=0)
     
+    def encode_all_states(self, state: HanabiState):
+        """Encode the state embedding of all players. The player index starts from the current player.
+        Args:
+            state (HanabiState): The state to encode.
+        """
+        embs = [self.encode_state(state, (state.cur_player() + i) % self.num_players) for i in range(self.num_players)]
+        return torch.stack(embs)
+    
     def select_action(self, states: List[HanabiState], beliefs: torch.Tensor) -> Tuple[List[HanabiMove], torch.Tensor]:
         """Batched action selection.
         Args:
-            states (List[HanabiState]): the states to select actions.
-            beliefs (Tensor): the belief embeddings of the current players.
+            states (List[HanabiState]): Batched states before selecting actions.
+            beliefs (Tensor): Batched belief embeddings of all the players, [Batch, Player, Embed].
         """
-        state_emb = torch.stack([self.encode_state(state) for state in states])
+        state_emb = torch.stack([self.encode_state_all(state) for state in states])
         valid_moves = [state.observation(state.cur_player()).legal_moves() for state in states]
         return self.ppo_agent.select_action(state_emb, beliefs, valid_moves)
     
@@ -184,11 +192,6 @@ class HanabiPPOAgentWrapper:
         if self.do_train:
             torch.save(dict(
                 ppo_policy=self.ppo_agent.policy.state_dict(),
-                card_knowledge_encoder=self.card_knowledge_encoder.state_dict(),
-                discard_pile_encoder=self.discard_pile_encoder.state_dict(),
-                firework_encoder=self.firework_encoder.state_dict(),
-                last_moves_encoder=self.last_moves_encoder.state_dict(),
-                info_token_encoder=self.info_token_encoder.state_dict(),
                 update_self_belief=self.update_self_belief.state_dict(),
                 update_other_belief=self.update_other_belief.state_dict(),
                 tom=self.tom.state_dict(),
@@ -198,11 +201,6 @@ class HanabiPPOAgentWrapper:
         else:
             torch.save(dict(
                 ppo_policy=self.ppo_agent.policy.state_dict(),
-                card_knowledge_encoder=self.card_knowledge_encoder.state_dict(),
-                discard_pile_encoder=self.discard_pile_encoder.state_dict(),
-                firework_encoder=self.firework_encoder.state_dict(),
-                last_moves_encoder=self.last_moves_encoder.state_dict(),
-                info_token_encoder=self.info_token_encoder.state_dict(),
                 update_self_belief=self.update_self_belief.state_dict(),
                 update_other_belief=self.update_other_belief.state_dict(),
                 tom=self.tom.state_dict(),
@@ -211,11 +209,6 @@ class HanabiPPOAgentWrapper:
     def load(self, checkpoint_path: str):
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.ppo_agent.policy.load_state_dict(checkpoint['ppo_policy'])
-        self.card_knowledge_encoder.load_state_dict(checkpoint['card_knowledge_encoder'])
-        self.discard_pile_encoder.load_state_dict(checkpoint['discard_pile_encoder'])
-        self.firework_encoder.load_state_dict(checkpoint['firework_encoder'])
-        self.last_moves_encoder.load_state_dict(checkpoint['last_moves_encoder'])
-        self.info_token_encoder.load_state_dict(checkpoint['info_token_encoder'])
         self.update_self_belief.load_state_dict(checkpoint['update_self_belief'])
         self.update_other_belief.load_state_dict(checkpoint['update_other_belief'])
         self.tom.load_state_dict(checkpoint['tom'])
@@ -315,7 +308,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
                     state.deal_random_card()
                 episode_time_steps[i] += 1
             initial_states = [state.copy() for state in states]  # Cache initial states
-            actions, intention_probs = hanabi_agent.select_action(states, beliefs[:, 0, :])
+            actions, intention_probs = hanabi_agent.select_action(states, beliefs)
             for state, action in zip(states, actions):
                 state.apply_move(action)
             result_states = [state.copy() for state in states]

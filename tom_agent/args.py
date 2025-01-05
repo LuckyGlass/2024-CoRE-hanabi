@@ -11,6 +11,7 @@ class ModelArguments:
     num_intention: int = field(default=2, metadata={'help': "The number of the types of intentions."})
     hidden_dim_actor: int = field(default=10, metadata={'help': "It decides the width of the Actor module."})
     hidden_dim_critic: int = field(default=10, metadata={'help': "It decides the width of the Critic module."})
+    hidden_dim_shared: int = field(default=10, metadata={'help': "The output dimension of the shared transformation."})
     hidden_dim_tom: int = field(default=10, metadata={'help': "It decides the width of the ToM module."})
     hidden_dim_update: int = field(default=10, metadata={'help': "It decides the width of the belief-update module."})
 

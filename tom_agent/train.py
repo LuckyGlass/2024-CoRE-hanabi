@@ -139,6 +139,8 @@ class HanabiPPOAgentWrapper:
             origin_states (List[HanabiState]): The states before the actions.
             result_states (List[HanabiState]): The states after the actions.
             actions (List[HanabiMove]): The actions.
+        Returns:
+            updated_beliefs (Tensor): The updated beliefs, [Batch, Player, Embed]
         """
         start_player_id = [state.cur_player() for state in origin_states]
         start_player_origin_state_emb = [self.encode_state(origin_state, i) for origin_state, i in zip(origin_states, start_player_id)]
@@ -164,11 +166,14 @@ class HanabiPPOAgentWrapper:
     def tom_supervise(self, origin_states: List[HanabiState], result_states: List[HanabiState], actions: List[HanabiMove], gt_intention: torch.Tensor, believes: torch.Tensor) -> Tuple[float, float]:
         """
         Args:
-            origin_states (List[HanabiState]): the states before the actions.
-            result_states (List[HanabiState]): the states after the actions.
-            actions (List[HanabiMove]): the actions.
-            gt_intention (Tensor): the ground-truth intentions.
-            believes (Tensor): the belief embeddings of multiple games, indexed as +0, +1, ..., +(N-1).
+            origin_states (List[HanabiState]): The batched states before the actions.
+            result_states (List[HanabiState]): The batched states after the actions.
+            actions (List[HanabiMove]): The actions.
+            gt_intention (Tensor): The batched ground-truth intention distributions, [Batch, Intention].
+            believes (Tensor): The batched belief embeddings, [Batch, Player, Embed], starting from the players taking the actions.
+        Returns:
+            loss_intention (float): The average intention loss.
+            loss_belief (float): The average belief loss.
         """
         gt_belief = believes[:, 0].detach()  # The target needn't consider whether others can predict it.
         gt_belief = gt_belief.repeat_interleave(self.num_players - 1, dim=0)
@@ -317,16 +322,21 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
 
     with tqdm.tqdm(total=max_training_timesteps) as pbar:
         while global_time_steps <= max_training_timesteps:
-            for i, state in enumerate(states):
-                while state.cur_player() == CHANCE_PLAYER_ID:
-                    state.deal_random_card()
+            for i in range(num_parallel_games):
+                if states[i].is_terminal() or episode_time_steps[i] >= max_episode_length:
+                    states[i] = game.new_initial_state()
+                    beliefs[i] = 0
+                    episode_time_steps[i] = 0
+                    episode_total_reward[i] = 0
+                    episode_total_score[i] = 0
+                while states[i].cur_player() == CHANCE_PLAYER_ID:
+                    states[i].deal_random_card()
                 episode_time_steps[i] += 1
             initial_states = [state.copy() for state in states]  # Cache initial states
             actions, intention_probs = hanabi_agent.select_action(states, beliefs)
             for state, action in zip(states, actions):
                 state.apply_move(action)
             result_states = [state.copy() for state in states]
-            to_be_updated_list = []
             for i, state in enumerate(states):
                 pbar.update(1)
                 global_time_steps += 1
@@ -354,9 +364,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
                     episode_time_steps[i] = 0
                     episode_total_reward[i] = 0
                     episode_total_score[i] = 0
-                else:
-                    to_be_updated_list.append(i)
-            beliefs = hanabi_agent.update_believes(beliefs[to_be_updated_list], list_index(initial_states, to_be_updated_list), list_index(result_states, to_be_updated_list), list_index(actions, to_be_updated_list))  # Fix: ignore new episodes
+            beliefs = hanabi_agent.update_believes(beliefs, initial_states, result_states, actions)
             loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_states, result_states, actions, intention_probs, beliefs)
             cache_loss_intention.append(loss_intention)
             cache_loss_belief.append(loss_belief)

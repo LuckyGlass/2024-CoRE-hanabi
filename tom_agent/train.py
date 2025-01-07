@@ -1,3 +1,4 @@
+import logging
 import torch
 from hanabi_learning_environment.pyhanabi import (
     HanabiGame,
@@ -116,6 +117,9 @@ class HanabiPPOAgentWrapper:
         Args:
             states (List[HanabiState]): Batched states before selecting actions.
             beliefs (Tensor): Batched belief embeddings of all the players, [Batch, Player, Embed].
+        Returns:
+            actions (List[HanabiMove]): The selected actions.
+            intention_dist (Tensor): The intention distributions, [Batch, #Intention].
         """
         state_emb = torch.stack([self.encode_all_states(state) for state in states])
         valid_moves = [state.observation(state.cur_player()).legal_moves() for state in states]
@@ -223,7 +227,7 @@ class HanabiPPOAgentWrapper:
                 self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **_):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **kwargs):
     """
     Args:
         clip_epsilon (float):
@@ -259,6 +263,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         resume_from_checkpoint(str | None): the path of the checkpoint.
         num_parallel_games (int): The number of parallel games.
     """
+    logging.warning(f"Unused kwargs = {kwargs}")
     print('-' * 10, "Game settings", '-' * 10)
     print("#Players", num_players)
     print("#Colors", num_colors)

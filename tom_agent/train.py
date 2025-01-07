@@ -24,7 +24,7 @@ from .encoders import (
     TokenEncoder
 )
 from .models import BeliefUpdateModule, ToMModule
-from .utils import move2id, count_total_cards, count_total_moves
+from .utils import move2id, count_total_cards, count_total_moves, list_index
 import os
 import tqdm
 
@@ -326,6 +326,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
             for state, action in zip(states, actions):
                 state.apply_move(action)
             result_states = [state.copy() for state in states]
+            to_be_updated_list = []
             for i, state in enumerate(states):
                 pbar.update(1)
                 global_time_steps += 1
@@ -342,18 +343,20 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
                     reward = simplest_reward(result_states[i])
                 else:
                     raise ValueError(f"Unknown reward_type = \"{reward_type}\"")
-                done = state.is_terminal() or episode_time_steps[i] == max_episode_length
+                is_terminal = state.is_terminal() or episode_time_steps[i] == max_episode_length
                 episode_total_reward[i] += reward
                 hanabi_agent.ppo_agent.buffer.rewards.append(reward)
-                hanabi_agent.ppo_agent.buffer.is_terminals.append(done)
-                if done:
+                hanabi_agent.ppo_agent.buffer.is_terminals.append(is_terminal)
+                if is_terminal:
                     wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i], play_steps=episode_time_steps[i]), step=global_time_steps)
                     states[i] = game.new_initial_state()
                     beliefs[i, :, :] = torch.zeros((num_players, emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)  # TODO: maybe better initialization
                     episode_time_steps[i] = 0
                     episode_total_reward[i] = 0
                     episode_total_score[i] = 0
-            beliefs = hanabi_agent.update_believes(beliefs, initial_states, result_states, actions)
+                else:
+                    to_be_updated_list.append(i)
+            beliefs = hanabi_agent.update_believes(beliefs[to_be_updated_list], list_index(initial_states, to_be_updated_list), list_index(result_states, to_be_updated_list), list_index(actions, to_be_updated_list))  # Fix: ignore new episodes
             loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_states, result_states, actions, intention_probs, beliefs)
             cache_loss_intention.append(loss_intention)
             cache_loss_belief.append(loss_belief)

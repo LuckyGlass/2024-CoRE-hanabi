@@ -1,4 +1,5 @@
 from hanabi_learning_environment.pyhanabi import HanabiMove, HanabiMoveType
+from typing import List, Any
 
 
 ID2COLOR = "RYGWB"
@@ -36,3 +37,7 @@ def move2id(move: HanabiMove, num_players: int, num_colors: int, num_ranks: int,
         return 2 * hand_size + (num_players - 1) * num_colors + (offset - 1) * num_ranks + move.rank()
     else:
         return -1
+
+
+def list_index(l: List[Any], index: List[Any]) -> List[Any]:
+    return [l[i] for i in index]

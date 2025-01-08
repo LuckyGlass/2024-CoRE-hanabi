@@ -1,4 +1,6 @@
-from hanabi_learning_environment.pyhanabi import HanabiMove, HanabiMoveType
+import numpy as np
+import torch
+from hanabi_learning_environment.pyhanabi import HanabiMove, HanabiMoveType, HanabiState
 from typing import List, Any
 
 
@@ -41,3 +43,48 @@ def move2id(move: HanabiMove, num_players: int, num_colors: int, num_ranks: int,
 
 def list_index(l: List[Any], index: List[Any]) -> List[Any]:
     return [l[i] for i in index]
+
+
+def visualize_info(state: HanabiState, action: HanabiMove, beliefs: torch.Tensor, intention_probs: torch.Tensor, num_ranks: int, num_colors: int):
+    def get_possible_num_and_color(card_knowledge_list):
+        return_list = []
+        for card_knowledges in card_knowledge_list:
+            for card_knowledge in card_knowledges:
+                possible_rank = []
+                possible_color = []
+                for i in range(num_ranks):
+                    if card_knowledge.rank_plausible(i):
+                        possible_rank.append(i)
+                for i in range(num_colors):
+                    if card_knowledge.color_plausible(i):
+                        possible_color.append(i)
+                return_list.append((possible_color, possible_rank))
+        return return_list
+    
+    def handle_card_list(card_list):
+        return [(card._color, card._rank) for card in card_list]
+    
+    card_observation_0 = state.observation(0)
+    card_observation_1 = state.observation(1)
+
+    card_konwledge_0 = card_observation_0.card_knowledge()
+    card_konwledge_1 = card_observation_1.card_knowledge()
+
+    possible_num_and_color_0 = get_possible_num_and_color(card_konwledge_0)
+    possible_num_and_color_1 = get_possible_num_and_color(card_konwledge_1)
+
+    return {
+        'player_hands': [handle_card_list(hands) for hands in state.player_hands()],
+        'observed_hands': [handle_card_list(hands) for hands in state.observation(0).observed_hands()],
+        'observed_hands_1': [handle_card_list(hands) for hands in state.observation(1).observed_hands()],
+        'possible_num_and_color_0': possible_num_and_color_0,
+        'possible_num_and_color_1': possible_num_and_color_1,
+        "action": action.__repr__(),
+        "discard_pile": handle_card_list(state.discard_pile()),
+        "deck_size": state.deck_size(),
+        "fireworks": state.fireworks(),
+        "life_tokens": state.life_tokens(),
+        "score": state.score(),
+        "belief_embedding": beliefs.detach().cpu().numpy().astype(np.float32).tolist(),
+        "intention": intention_probs.cpu().numpy().astype(np.float32).tolist()
+    }

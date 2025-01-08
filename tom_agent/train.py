@@ -1,4 +1,5 @@
 import logging
+import pickle
 import torch
 from hanabi_learning_environment.pyhanabi import (
     HanabiGame,
@@ -24,7 +25,7 @@ from .encoders import (
     TokenEncoder
 )
 from .models import BeliefUpdateModule, ToMModule
-from .utils import move2id, count_total_cards, count_total_moves, list_index
+from .utils import move2id, count_total_cards, count_total_moves, visualize_info
 import os
 import tqdm
 
@@ -330,25 +331,35 @@ def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str,
     episode_time_steps = [0 for _ in range(num_parallel_games)]
     episode_total_reward = [0 for _ in range(num_parallel_games)]
     episode_total_score = [0 for _ in range(num_parallel_games)]
+    episode_cache_states = [[] for _ in range(num_parallel_games)]
     play_steps = 0
 
+    count_saved_examples = 0
     deprecate_threshold = 0 if deprecate_min is None else deprecate_min
     with tqdm.tqdm(total=max_training_timesteps) as pbar:
         while global_time_steps <= max_training_timesteps:
             for i in range(num_parallel_games):
                 if states[i].is_terminal() or episode_time_steps[i] >= max_episode_length:
+                    if episode_total_reward[i] >= 9:
+                        count_saved_examples += 1
+                        with open(f'results/{episode_total_reward[i]:02d}-{count_saved_examples:03d}.pkl', 'wb') as f:
+                            pickle.dump(episode_cache_states[i], f)
                     states[i] = game.new_initial_state()
                     beliefs[i] = 0
                     episode_time_steps[i] = 0
                     episode_total_reward[i] = 0
                     episode_total_score[i] = 0
+                    episode_cache_states[i] = []
                 while states[i].cur_player() == CHANCE_PLAYER_ID:
                     states[i].deal_random_card()
                 episode_time_steps[i] += 1
+                
             initial_states = [state.copy() for state in states]  # Cache initial states
             actions, intention_probs = hanabi_agent.select_action(states, beliefs)
             for state, action in zip(states, actions):
                 state.apply_move(action)
+            for i in range(num_parallel_games):
+                episode_cache_states[i].append(visualize_info(states[i], actions[i], beliefs[i], intention_probs[i], num_ranks, num_colors))
             result_states = [state.copy() for state in states]
             for i, state in enumerate(states):
                 pbar.update(1)
@@ -373,11 +384,6 @@ def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str,
                 hanabi_agent.ppo_agent.buffer.reserve.append(episode_total_score[i] < deprecate_threshold)
                 if is_terminal:
                     wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i], play_steps=episode_time_steps[i]), step=global_time_steps)
-                    states[i] = game.new_initial_state()
-                    beliefs[i, :, :] = torch.zeros((num_players, emb_dim_belief), dtype=torch.float32, device=device, requires_grad=False)  # TODO: maybe better initialization
-                    episode_time_steps[i] = 0
-                    episode_total_reward[i] = 0
-                    episode_total_score[i] = 0
             beliefs = hanabi_agent.update_believes(beliefs, initial_states, result_states, actions)
             loss_intention, loss_belief = hanabi_agent.tom_supervise(initial_states, result_states, actions, intention_probs, beliefs)
             cache_loss_intention.append(loss_intention)

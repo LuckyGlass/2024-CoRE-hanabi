@@ -42,7 +42,7 @@ class CardKnowledgeEncoder(nn.Module):
                 knowledge_emb.append(torch.tensor(card_knowledge.plausible, dtype=torch.float32, device=self.device, requires_grad=False))
             for _ in range(self.hand_size - len(player_knowledge)):
                 knowledge_emb.append(torch.zeros((self.num_colors, self.num_ranks), dtype=torch.float32, device=self.device))
-        knowledge_emb = torch.concat(knowledge_emb)
+        knowledge_emb = torch.stack(knowledge_emb).flatten()
         return knowledge_emb
 
     def dim(self):

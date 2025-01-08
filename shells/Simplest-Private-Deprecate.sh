@@ -26,8 +26,8 @@ python -O start_train.py \
     --max_episode_length 128 \
     --update_interval 4096 \
     --saving_interval 32 \
-    --saving_dir checkpoints/Simplest-Private \
-    --run_name Simplest-Private \
+    --saving_dir checkpoints/Simplest-Private-Deprecate \
+    --run_name Simplest-Private-Deprecate \
     --reward_type simplest \
     --alpha_tom_loss 0.1 \
     --num_parallel_games 32 \

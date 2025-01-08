@@ -52,3 +52,4 @@ class TrainingArguments:
     alpha_tom_loss: float = field(default=1.0, metadata={'help': "The factor multiplied to the ToM loss."})
     test_interval: Optional[int] = field(default=None, metadata={'help': "The interval (updating steps) between two testings."})
     num_parallel_games: int = field(default=1, metadata={'help': "The number of parallel games."})
+    deprecate_threshold: int = field(default=0, metadata={'help': "Episodes whose total scores < threshold will be deprecated."})

@@ -238,7 +238,7 @@ class HanabiPPOAgentWrapper:
                 self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, emb_dim_private_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **kwargs):
+def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, emb_dim_private_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, deprecate_threshold: int, **kwargs):
     """
     Args:
         belief_only (bool): Whether to take actions only based on beliefs.
@@ -367,7 +367,7 @@ def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str,
                 episode_total_reward[i] += reward
                 hanabi_agent.ppo_agent.buffer.rewards.append(reward)
                 hanabi_agent.ppo_agent.buffer.is_terminals.append(is_terminal)
-                hanabi_agent.ppo_agent.buffer.deprecated.append(episode_total_score[i] > 2)
+                hanabi_agent.ppo_agent.buffer.reserve.append(episode_total_score[i] < deprecate_threshold)
                 if is_terminal:
                     wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i], play_steps=episode_time_steps[i]), step=global_time_steps)
                     states[i] = game.new_initial_state()

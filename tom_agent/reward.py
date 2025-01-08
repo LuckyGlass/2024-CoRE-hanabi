@@ -39,17 +39,14 @@ def reward_punish_at_last(updated_state: HanabiState):
 
 def reward_for_reveal(origin_state: HanabiState, updated_state: HanabiState, num_ranks: int, num_colors: int, num_players: int, hand_size: int):
     """Compute the reward for the last move.
-    If it scores, reward += 10
-    If it loses life, reward -= 100
+    If it scores, reward += 100
     For any move, reward += reduced_entropy / (log(#color x #rank) x hand_size)
     If it reveals the card to play, for every revealed card to play, reward += 2
     """
     last_move: HanabiHistoryItem = updated_state.move_history()[-1]
     total_reward = 0.0
     if last_move.scored():
-        total_reward += 10
-    if updated_state.life_tokens() < origin_state.life_tokens():
-        total_reward -= 100
+        total_reward += 100
     normalization = log2(num_colors * num_ranks) * hand_size
     for player in range(num_players):
         origin_observation = observation_solver(origin_state.observation(player), num_ranks, num_colors, num_players, self_eval=True)[0]

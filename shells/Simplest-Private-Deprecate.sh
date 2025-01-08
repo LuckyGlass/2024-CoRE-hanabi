@@ -31,5 +31,6 @@ python -O start_train.py \
     --reward_type simplest \
     --alpha_tom_loss 0.1 \
     --num_parallel_games 32 \
-    --deprecate_threshold 3
+    --deprecate_min 3 \
+    --deprecate_step 5
 

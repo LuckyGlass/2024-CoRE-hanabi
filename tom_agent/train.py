@@ -238,13 +238,15 @@ class HanabiPPOAgentWrapper:
                 self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, emb_dim_private_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, deprecate_threshold: int, **kwargs):
+def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, emb_dim_private_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, deprecate_min: Optional[int], deprecate_step: Optional[int], **kwargs):
     """
     Args:
         belief_only (bool): Whether to take actions only based on beliefs.
         clip_epsilon (float):
         device (str):
         discount_factor (float):
+        deprecate_min (Optional[int]): Refer to deprecate_step.
+        deprecate_step (Optional[int]): The episodes whose total scores < threshold will be deprecated; threshold starts from deprecate_min and increases by 1 every deprecate_step updating steps.
         alpha_tom_loss (float): The factor multiplied to the ToM loss.
         emb_dim_belief (int): The dimension of the embeddings of believes.
         emb_dim_private_belief (int): The dimension of private belief in belief embedding.
@@ -330,6 +332,7 @@ def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str,
     episode_total_score = [0 for _ in range(num_parallel_games)]
     play_steps = 0
 
+    deprecate_threshold = 0 if deprecate_min is None else deprecate_min
     with tqdm.tqdm(total=max_training_timesteps) as pbar:
         while global_time_steps <= max_training_timesteps:
             for i in range(num_parallel_games):
@@ -389,4 +392,6 @@ def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str,
                 del cache_loss_belief[:], cache_loss_intention[:]
                 if count_update % saving_interval == 0:
                     hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))
+                if deprecate_step is not None and count_update % deprecate_step == 0:
+                    deprecate_threshold += 1
     hanabi_agent.save(os.path.join(saving_dir, f"checkpoint_{global_time_steps}.ckp"))

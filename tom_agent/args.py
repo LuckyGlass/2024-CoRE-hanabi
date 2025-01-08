@@ -5,6 +5,7 @@ from typing import Optional
 
 @dataclass
 class ModelArguments:
+    belief_only: bool = field(default=False, metadata={'help': "Whether to take actions only based on beliefs."})
     device: str = field(default='cpu')
     emb_dim_belief: int = field(default=10, metadata={'help': "The dimension of the embeddings of believes."})
     emb_dim_private_belief: int = field(default=0, metadata={'help': "The dimension of private belief in belief embedding."})

@@ -31,9 +31,10 @@ class RolloutBuffer:
 
 
 class ActorCriticModule(nn.Module):
-    def __init__(self, num_players: int=2, num_colors: int=4, num_ranks: int=5, hand_size: int=5, **kwargs):
+    def __init__(self, num_players: int=2, num_colors: int=4, num_ranks: int=5, hand_size: int=5, belief_only: bool=False, **kwargs):
         """
         Args:
+            belief_only (bool): Whether to take actions only based on beliefs.
             emb_dim_state (int): The dimension of the embeddings of states.
             emb_dim_belief (int): The dimension of the embeddings of believes.
             num_colors (int): The number of colors.
@@ -47,6 +48,16 @@ class ActorCriticModule(nn.Module):
             device (str):
         """
         super().__init__()
+        self.belief_only = belief_only
+        if belief_only:
+            self.trans_actor = nn.Sequential(
+                nn.Linear(kwargs['emb_dim_belief'], kwargs['hidden_dim_shared'] * 2, device=kwargs['device']),
+                nn.GELU(),
+                nn.BatchNorm1d(kwargs['hidden_dim_shared'] * 2, device=kwargs['device']),
+                nn.Linear(kwargs['emb_dim_belief'] * 2, kwargs['hidden_dim_shared'], device=kwargs['device']),
+                nn.GELU(),
+                nn.BatchNorm1d(kwargs['hidden_dim_shared'], device=kwargs['device'])
+            )
         self.shared = SharedTransformation(**kwargs)
         self.actor = ActorModule(**kwargs)
         self.critic = CriticModule(num_players=num_players, **kwargs)
@@ -65,7 +76,11 @@ class ActorCriticModule(nn.Module):
         num_batches = states.shape[0]
         emb_dim_state, emb_dim_belief = states.shape[-1], beliefs.shape[-1]
         inputs = self.shared(states.reshape(-1, emb_dim_state), beliefs.reshape(-1, emb_dim_belief)).reshape(num_batches, self.num_players, -1)  # [Batch, Player, Embed]
-        action_probs, _ = self.actor.forward(inputs[:, 0, :])
+        if self.belief_only:
+            inputs_actor = self.trans_actor(beliefs[:, 0, :])
+            action_probs, _ = self.actor.forward(inputs_actor)
+        else:
+            action_probs, _ = self.actor.forward(inputs[:, 0, :])
         dist = torch.distributions.Categorical(action_probs)
         action_logprobs = dist.log_prob(actions)
         dist_entropy = dist.entropy()
@@ -83,6 +98,11 @@ class ActorCriticModule(nn.Module):
         num_batches = states.shape[0]
         emb_dim_state, emb_dim_belief = states.shape[-1], beliefs.shape[-1]
         inputs = self.shared(states.reshape(-1, emb_dim_state), beliefs.reshape(-1, emb_dim_belief)).reshape(num_batches, self.num_players, -1)
+        if self.belief_only:
+            inputs_actor = self.trans_actor(beliefs[:, 0, :])
+            action_probs, _ = self.actor.forward(inputs_actor)
+        else:
+            action_probs, _ = self.actor.forward(inputs[:, 0, :])
         action_probs, intention_probs = self.actor.forward(inputs[:, 0, :])
         valid_mask = torch.zeros_like(action_probs, dtype=torch.bool)
         valid_move_rows = sum([[i] * len(v) for i, v in enumerate(valid_moves)], start=[])
@@ -101,6 +121,7 @@ class PPOAgent:
     def __init__(self, discount_factor: float=0.95, clip_epsilon: float=0.2, num_training_epochs: int=4, learning_rate_actor: float=1e-4, learning_rate_critic: float=3e-4, learning_rate_shared: float=3e-4, **kwargs):
         """
         Args:
+            belief_only (bool): Whether to take actions only based on beliefs.
             discount_factor (float):
             clip_epsilon (float):
             num_training_epochs (int): The number of epochs to train the policy model per updating step.

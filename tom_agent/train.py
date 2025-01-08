@@ -33,6 +33,7 @@ class HanabiPPOAgentWrapper:
     def __init__(self, max_information_token: int=8, learning_rate_update: float=1e-4, learning_rate_tom: float=3e-4, alpha_tom_loss: float=0.1, do_train: bool=False, **kwargs):
         """
         Args:
+            belief_only (bool): Whether to take actions only based on beliefs.
             clip_epsilon (float):
             device (str):
             discount_factor (float):
@@ -237,9 +238,10 @@ class HanabiPPOAgentWrapper:
                 self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, emb_dim_private_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **kwargs):
+def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, emb_dim_private_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **kwargs):
     """
     Args:
+        belief_only (bool): Whether to take actions only based on beliefs.
         clip_epsilon (float):
         device (str):
         discount_factor (float):
@@ -287,6 +289,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
     os.makedirs(saving_dir, exist_ok=True)
     global_time_steps = 0
     hanabi_agent = HanabiPPOAgentWrapper(
+        belief_only=belief_only,
         clip_epsilon=clip_epsilon,
         device=device,
         discount_factor=discount_factor,

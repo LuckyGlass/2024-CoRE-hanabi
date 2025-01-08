@@ -7,6 +7,7 @@ from typing import Optional
 class ModelArguments:
     device: str = field(default='cpu')
     emb_dim_belief: int = field(default=10, metadata={'help': "The dimension of the embeddings of believes."})
+    emb_dim_private_belief: int = field(default=0, metadata={'help': "The dimension of private belief in belief embedding."})
     gamma_history: float = field(default=0.9, metadata={'help': "The hyperparameter of the exponential average in LastMovesEncoder."})
     num_intention: int = field(default=2, metadata={'help': "The number of the types of intentions."})
     hidden_dim_actor: int = field(default=10, metadata={'help': "It decides the width of the Actor module."})

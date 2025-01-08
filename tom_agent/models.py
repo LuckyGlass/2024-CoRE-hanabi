@@ -139,10 +139,11 @@ class BeliefUpdateModule(nn.Module):
 
 
 class ToMModule(nn.Module):
-    def __init__(self, emb_dim_state: int, emb_dim_belief: int, num_moves: int, num_intention: int, hidden_dim_tom: int, device: str, **_):
+    def __init__(self, emb_dim_state: int, emb_dim_belief: int, emb_dim_private_belief: int, num_moves: int, num_intention: int, hidden_dim_tom: int, device: str, **_):
         """
         Args:
             emb_dim_state (int): The dimension of the embeddings of states.
+            emb_dim_private_belief (int): The dimension of private belief in belief embedding.
             dim_belief (int): The dimension of the embeddings of believes.
             num_moves (int): The number of types of actions.
             num_intention (int): The number of the types of intentions.
@@ -152,8 +153,8 @@ class ToMModule(nn.Module):
         super().__init__()
         self.tom = nn.Sequential(
             nn.Linear(emb_dim_state * 2 + emb_dim_belief + num_moves, hidden_dim_tom * 4, device=device),
-            nn.ReLU(),
-            nn.Linear(hidden_dim_tom * 4, num_intention + emb_dim_belief, device=device)
+            nn.GELU(),
+            nn.Linear(hidden_dim_tom * 4, num_intention + emb_dim_belief - emb_dim_private_belief, device=device)
         )
         self.num_intention = num_intention
         
@@ -167,6 +168,6 @@ class ToMModule(nn.Module):
         """
         input_emb = torch.concat((initial_states, result_states, beliefs, action_emb), dim=1)
         output = self.tom.forward(input_emb)
-        intention, pred_belief = output[:, :self.num_intention], output[:, self.num_intention:]
+        intention, pred_public_belief = output[:, :self.num_intention], output[:, self.num_intention:]
         intention = nn.functional.softmax(intention, dim=1)
-        return intention, pred_belief
+        return intention, pred_public_belief

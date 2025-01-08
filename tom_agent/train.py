@@ -37,6 +37,7 @@ class HanabiPPOAgentWrapper:
             device (str):
             discount_factor (float):
             emb_dim_belief (int): The dimension of the embeddings of believes.
+            emb_dim_private_belief (int): The dimension of private belief in belief embedding.
             gamma_history (float): The hyperparameter of the exponential average in LastMovesEncoder.
             hand_size (int):
             hidden_dim_actor (int): It decides the width of the Actor module.
@@ -72,6 +73,7 @@ class HanabiPPOAgentWrapper:
         self.num_colors = kwargs['num_colors']
         self.num_ranks = kwargs['num_ranks']
         self.hand_size = kwargs['hand_size']
+        self.emb_dim_private_belief = kwargs['emb_dim_private_belief']
         self.num_moves = count_total_moves(self.num_players, self.num_colors, self.num_ranks, self.hand_size)
         self.alpha_tom_loss = alpha_tom_loss
         self.do_train = do_train
@@ -178,7 +180,7 @@ class HanabiPPOAgentWrapper:
             loss_intention (float): The average intention loss.
             loss_belief (float): The average belief loss.
         """
-        gt_belief = believes[:, 0].detach()  # The target needn't consider whether others can predict it.
+        gt_belief = believes[:, 0, self.emb_dim_private_belief:]
         gt_belief = gt_belief.repeat_interleave(self.num_players - 1, dim=0)
         others_belief = believes[:, 1:].reshape(-1, believes.shape[-1])
         start_player_id = [origin_state.cur_player() for origin_state in origin_states]
@@ -235,7 +237,7 @@ class HanabiPPOAgentWrapper:
                 self.ppo_agent.optimizer.load_state_dict(checkpoint['ppo_optimizer'])
 
 
-def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **kwargs):
+def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: float, alpha_tom_loss: float, emb_dim_belief: int, emb_dim_private_belief: int, gamma_history: float, hand_size: int, hidden_dim_actor: int, hidden_dim_critic: int, hidden_dim_shared: int, hidden_dim_tom: int, hidden_dim_update: int, learning_rate_actor: float, learning_rate_critic: float, learning_rate_shared: float, learning_rate_update: float, learning_rate_tom: float, max_episode_length: int, max_information_token: int, max_training_timesteps: int, num_colors: int, num_intention: int, num_moves: int, num_players: int, num_ranks: int, num_training_epochs: int, update_interval: int, saving_interval: int, saving_dir: str, reward_type: str, resume_from_checkpoint: Optional[str], num_parallel_games: int, **kwargs):
     """
     Args:
         clip_epsilon (float):
@@ -243,6 +245,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         discount_factor (float):
         alpha_tom_loss (float): The factor multiplied to the ToM loss.
         emb_dim_belief (int): The dimension of the embeddings of believes.
+        emb_dim_private_belief (int): The dimension of private belief in belief embedding.
         gamma_history (float): The hyperparameter of the exponential average in LastMovesEncoder.
         hand_size (int):
         hidden_dim_actor (int): It decides the width of the Actor module.
@@ -288,6 +291,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         device=device,
         discount_factor=discount_factor,
         emb_dim_belief=emb_dim_belief,
+        emb_dim_private_belief=emb_dim_private_belief,
         gamma_history=gamma_history,
         hand_size=hand_size,
         hidden_dim_actor=hidden_dim_actor,
@@ -308,7 +312,7 @@ def train(game: HanabiGame, clip_epsilon: float, device: str, discount_factor: f
         num_ranks=num_ranks,
         num_training_epochs=num_training_epochs,
         alpha_tom_loss=alpha_tom_loss,
-        do_train=True
+        do_train=True,
     )
     if resume_from_checkpoint is not None:
         hanabi_agent.load(resume_from_checkpoint)

@@ -19,6 +19,7 @@ class RolloutBuffer:
         self.rewards = []
         self.state_values = []
         self.is_terminals = []
+        self.deprecated = []
     
     def clear(self):
         del self.actions[:]
@@ -28,6 +29,7 @@ class RolloutBuffer:
         del self.rewards[:]
         del self.state_values[:]
         del self.is_terminals[:]
+        del self.deprecated[:]
 
 
 class ActorCriticModule(nn.Module):
@@ -192,13 +194,20 @@ class PPOAgent:
         for i, is_terminal in enumerate(self.buffer.is_terminals):
             if not is_terminal and i + num_parallel < len(self.buffer.is_terminals):
                 rewards_to_go[i] += self.discount_factor * rewards_to_go[i + num_parallel]
+                self.buffer.deprecated[i] = self.buffer.deprecated[i + num_parallel]
         rewards = torch.tensor(rewards_to_go, dtype=torch.float, requires_grad=False, device=self.device)
+        rewards = rewards[self.buffer.deprecated]
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
         old_states = torch.stack(self.buffer.states, dim=0).to(self.device)
+        old_states = old_states[self.buffer.deprecated]
         old_believes = torch.stack(self.buffer.believes, dim=0).to(self.device)
+        old_believes = old_believes[self.buffer.deprecated]
         old_actions = torch.tensor(self.buffer.actions, dtype=torch.long, requires_grad=False, device=self.device)
+        old_actions = old_actions[self.buffer.deprecated]
         old_logprobs = torch.tensor(self.buffer.logprobs, dtype=torch.float, requires_grad=False, device=self.device)
+        old_logprobs = old_logprobs[self.buffer.deprecated]
         old_state_values = torch.tensor(self.buffer.state_values, dtype=torch.float, requires_grad=False, device=self.device)
+        old_state_values = old_state_values[self.buffer.deprecated]
         advantages = rewards - old_state_values
         mse_loss_fn = nn.MSELoss()
         

@@ -367,6 +367,7 @@ def train(game: HanabiGame, belief_only: bool, clip_epsilon: float, device: str,
                 episode_total_reward[i] += reward
                 hanabi_agent.ppo_agent.buffer.rewards.append(reward)
                 hanabi_agent.ppo_agent.buffer.is_terminals.append(is_terminal)
+                hanabi_agent.ppo_agent.buffer.deprecated.append(episode_total_score[i] > 2)
                 if is_terminal:
                     wandb.log(dict(total_reward=episode_total_reward[i], total_score=episode_total_score[i], play_steps=episode_time_steps[i]), step=global_time_steps)
                     states[i] = game.new_initial_state()

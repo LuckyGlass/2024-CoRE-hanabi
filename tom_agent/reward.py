@@ -46,7 +46,7 @@ def reward_for_reveal(origin_state: HanabiState, updated_state: HanabiState, num
     last_move: HanabiHistoryItem = updated_state.move_history()[-1]
     total_reward = 0.0
     if last_move.scored():
-        total_reward += 100
+        total_reward += 10
     normalization = log2(num_colors * num_ranks) * hand_size
     for player in range(num_players):
         origin_observation = observation_solver(origin_state.observation(player), num_ranks, num_colors, num_players, self_eval=True)[0]

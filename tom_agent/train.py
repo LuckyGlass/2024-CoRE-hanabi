@@ -88,11 +88,12 @@ class HanabiPPOAgentWrapper:
         self.device = kwargs['device']
     
     def encode_state(self, state: HanabiState, cur_player: Optional[int]=None):
-        """
-        Encode a single state from the perspective of a player.
+        """Encode a single state from the perspective of a player.
         Args:
-            state (HanabiState): the state to encode.
-            cur_player (int): the player to encode the state. If None, the current player is used.
+            state (HanabiState): The state to encode.
+            cur_player (int): The player to encode the state. If None, the current player is used.
+        Returns:
+            state_emb (Tensor): The state embedding, a flattened tensor.
         """
         if cur_player is None:
             cur_player = state.cur_player()
@@ -108,6 +109,8 @@ class HanabiPPOAgentWrapper:
         """Encode the state embedding of all players. The player index starts from the current player.
         Args:
             state (HanabiState): The state to encode.
+        Returns:
+            emb (Tensor): The state embedding of all players, [Player, Embed].
         """
         embs = [self.encode_state(state, (state.cur_player() + i) % self.num_players) for i in range(self.num_players)]
         return torch.stack(embs)
@@ -116,7 +119,7 @@ class HanabiPPOAgentWrapper:
         """Batched action selection.
         Args:
             states (List[HanabiState]): Batched states before selecting actions.
-            beliefs (Tensor): Batched belief embeddings of all the players, [Batch, Player, Embed].
+            beliefs (Tensor): Batched belief embeddings of all the players, [Batch, Player, Embed]; player index starts from the players to take actions.
         Returns:
             actions (List[HanabiMove]): The selected actions.
             intention_dist (Tensor): The intention distributions, [Batch, #Intention].
@@ -135,12 +138,12 @@ class HanabiPPOAgentWrapper:
     def update_believes(self, beliefs: torch.Tensor, origin_states: List[HanabiState], result_states: List[HanabiState], actions: List[HanabiMove]) -> torch.Tensor:
         """Update the belief embeddings. Notice that it doesn't move to the next player.
         Args:
-            beliefs (Tensor): The belief embeddings of multiple games. The players are indexed as +0, +1, ..., +(N-1) and Player +0 is the player taking the action.
+            beliefs (Tensor): The belief embeddings of multiple games; player index starts from the players taking the actions.
             origin_states (List[HanabiState]): The states before the actions.
             result_states (List[HanabiState]): The states after the actions.
             actions (List[HanabiMove]): The actions.
         Returns:
-            updated_beliefs (Tensor): The updated beliefs, [Batch, Player, Embed]
+            updated_beliefs (Tensor): The updated beliefs, [Batch, Player, Embed]; player index starts from the players taking the actions.
         """
         start_player_id = [state.cur_player() for state in origin_states]
         start_player_origin_state_emb = [self.encode_state(origin_state, i) for origin_state, i in zip(origin_states, start_player_id)]

@@ -149,6 +149,9 @@ class PPOAgent:
             states (Tensor): Batched state embedding for all the players, [Batch, Player, Embed]; Player index starts at the player taking the action.
             beliefs (Tensor): Batched belief embedding for all the players, [Batch, Player, Embed]; Player index starts at the player taking the action.
             valid_moves (List[List[HanabiMove]]): The list of valid moves.
+        Returns:
+            actions (List[HanabiMove]): The selected actions.
+            intention_dist (Tensor): The intention distributions, [Batch, #Intention].
         """
         states = states.to(self.device)
         beliefs = beliefs.to(self.device)

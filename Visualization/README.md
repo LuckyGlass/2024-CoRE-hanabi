@@ -1,7 +1,9 @@
-确保你在Visualization目录下，然后运行python -m http.server 8000
+Make sure you are in the `Visualization` directory, then run the following command:
 
-在浏览器中打开http://localhost:8000
+```bash
+python -m http.server 8000
+```
 
-vis.ipynb，script.js可以选择对应的.json、.pkl文件
+Open `http://localhost:8000` in your browser.
 
-其中.pkl为对局实录。
+In `vis.ipynb` or `script.js`, you can select the corresponding `.json` or `.pkl` files, where `.pkl` files represent game replays.

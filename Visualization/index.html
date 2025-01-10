@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hanabi</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Hanabi</h1>
+
+  <!-- 回合选择滑杆 -->
+  <div class="round-slider">
+    <label for="roundSlider">回合选择：</label>
+    <input
+      type="range"
+      id="roundSlider"
+      min="0"
+      value="0"
+      step="1"
+      oninput="handleSliderChange(this.value)"
+    />
+    <span id="roundIndicator">第 0 回合</span>
+  </div>
+
+  <!-- 视角选择下拉框 -->
+  <div class="view-selector">
+    <label for="viewSelector">选择视角：</label>
+    <select id="viewSelector" onchange="handleViewChange(this.value)">
+      <option value="god">上帝视角</option>
+      <option value="player1">玩家1视角</option>
+      <option value="player2">玩家2视角</option>
+    </select>
+  </div>
+
+  <!-- 整体布局容器 -->
+  <div class="container">
+    <!-- 左上角：牌堆 -->
+    <div class="pile-area">
+      <h2>牌堆</h2>
+      <div class="pile-cards" id="pileCards">
+        <!-- 这里通过 JS 动态插入卡牌 DOM -->
+      </div>
+    </div>
+
+       <!-- 左下角：弃牌堆和数据显示 -->
+    <div class="discard-area-left">
+      <h2>游戏数据</h2>
+      <div class="stats-display">
+        <div class="stats-item">
+          <span>得分</span>
+          <span id="scoreDisplay">0</span>
+        </div>
+        <div class="stats-item">
+          <span>生命值</span>
+          <span id="livesDisplay">3</span>
+        </div>
+        <div class="stats-item">
+          <span>牌库数量</span>
+          <span id="deckCountDisplay">35</span>
+          
+        </div>
+        <div class="stats-item">
+          <span>提示数</span>
+          <span id="hintsDisplay">35</span>
+        </div>
+
+        <div class="stats-item action-item">
+          <span>本回合动作</span>
+          <span id="actionDisplay">-</span>
+        </div>
+        
+      </div>
+      <div class="discard-pile" id="discardPileLeft"></div>
+    </div>
+
+    <!-- 中间上下：两个玩家的手牌区 -->
+    <div class="players-area">
+      <!-- 玩家1的手牌 -->
+      <div class="player-hand" id="playerHand1">
+        <h3>玩家 1 手牌</h3>
+        <div class="cards-container" id="player1Cards"></div>
+      </div>
+      <!-- 玩家2的手牌 -->
+      <div class="player-hand" id="playerHand2">
+        <h3>玩家 2 手牌</h3>
+        <div class="cards-container" id="player2Cards"></div>
+      </div>
+    </div>
+
+    <!-- 右侧：弃牌区（暂不关注美术） -->
+    <div class="discard-area-right">
+      <h2>弃牌区</h2>
+      <div class="discard-pile" id="discardPileRight"></div>
+    </div>
+  </div>
+
+  <!-- 引入脚本 -->
+  <script src="script.js"></script>
+</body>
+</html>

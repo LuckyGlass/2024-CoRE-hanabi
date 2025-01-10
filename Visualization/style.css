@@ -1,0 +1,260 @@
+/* 如果需要全局重置，可以在此启用
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+*/
+
+/* 背景与文字整体风格 */
+body {
+  font-family: Arial, sans-serif;
+  background-color: #1a1a1a; /* 黑色主体背景 */
+  color: #eee; /* 文字颜色：浅色以便在深色背景上可见 */
+  padding: 10px;
+}
+
+
+
+.container {
+  display: grid;
+  grid-template-columns: 1fr 1.7fr 1fr;
+  grid-template-rows: 300px 1fr;  /* 将第一行从150px增加到200px */
+  grid-template-areas:
+    "pile-area  players-area discard-area-right"
+    "discard-area-left  players-area discard-area-right";
+  gap: 20px;  /* 增加间距从10px到20px，使布局更加宽松 */
+  padding: 20px;  /* 添加内边距 */
+}
+
+/* 公用的白色边框容器 */
+.container > div {
+  border: 1px solid #444; /* 边框改为深灰，避免黑底看不到 */
+  background-color: #2a2a2a; /* 深灰色背景，形成与 body 的区分 */
+  padding: 10px;
+  border-radius: 6px; /* 让盒子边角稍微圆润一点 */
+}
+
+
+.pile-area {
+  grid-area: pile-area;
+  padding: 15px;           /* 增加内边距 */
+  min-height: 200px;       /* 确保最小高度 */
+}
+
+.pile-cards000 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pile-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;              /* 增加卡片之间的间距 */
+  justify-content: center; /* 居中排列 */
+  align-items: center;     /* 垂直居中 */
+  height: 100%;           /* 充满容器高度 */
+}
+
+/* 弃牌堆区 (左下角) */
+.discard-area-left0 {
+  grid-area: discard-area-left;
+}
+
+.discard-pile0 {
+  min-height: 200px;
+  background-color: #333; /* 比容器更深一些，类似卡槽 */
+  border-radius: 4px;
+}
+
+/* 弃牌堆区 (左下角) */
+.discard-area-left {
+  grid-area: discard-area-left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.discard-pile {
+  min-height: 100px;
+  background-color: #333; /* 比容器更深一些，类似卡槽 */
+  border-radius: 4px;
+  flex: 1;
+}
+
+/* Discard pile grid layout */
+.discard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  max-height: calc(100% - 40px); /* Leave room for header */
+  overflow-y: auto;
+}
+
+/* Make cards in discard pile slightly smaller */
+.discard-grid .card {
+  width: 70px;
+  height: 100px;
+  font-size: 16px;
+  transition: transform 0.2s;
+}
+
+/* Optional hover effect */
+.discard-grid .card:hover {
+  transform: scale(1.1);
+  z-index: 1;
+}
+
+/* Optional discard order label */
+.discard-order {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.stats-display {
+  padding: 10px;
+  background-color: #333;
+  border-radius: 4px;
+}
+
+.stats-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid #444;
+}
+
+.stats-item:last-child {
+  border-bottom: none;
+}
+
+.stats-item span:first-child {
+  color: #aaa;  /* 标签文字使用浅灰色 */
+}
+
+.stats-item span:last-child {
+  font-weight: bold;
+  color: #fff;  /* 数值使用白色并加粗 */
+}
+
+.stats-item span:last-child {
+  font-weight: bold;
+  color: #fff;  /* 数值使用白色并加粗 */
+}
+
+.action-item {
+  margin-top: 10px;
+  padding-top: 10px !important;
+  border-top: 2px solid #444 !important;
+}
+
+.action-item span:last-child {
+  font-style: italic;
+  color: #2196f3; /* 使用蓝色突出显示动作 */
+  word-break: break-all; /* 允许长文本换行 */
+}
+
+/* 中间玩家区 */
+.players-area {
+  grid-area: players-area;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.player-hand {
+  /* 外层容器已在通用设置里加了背景与边框 */
+}
+
+.cards-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 右侧弃牌区 */
+.discard-area-right {
+  grid-area: discard-area-right;
+}
+
+/* 回合选择器区域 */
+.round-slider {
+  margin-top: 20px;
+  text-align: center;
+}
+
+/* 自定义滑杆样式（可选） */
+.round-slider input[type="range"] {
+  -webkit-appearance: none; /* 去掉默认样式 */
+  width: 200px;
+  background: transparent;
+  outline: none;
+}
+.round-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #666;
+  border-radius: 2px;
+}
+.round-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #2196f3; /* 拇指颜色：蓝 */
+  border-radius: 50%;
+  margin-top: -5px; /* 让拇指与轨道对齐 */
+  cursor: pointer;
+}
+.round-slider input[type="range"]:focus {
+  outline: none;
+}
+
+/* 卡牌通用样式 */
+.card {
+  width: 85px;               /* 统一宽 */
+  height: 130px;              /* 统一高 */
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 为卡牌加点阴影，让它在深色背景上更有层次感 */
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+}
+
+/* 我们把卡牌文字颜色改为白色，让数字在各色卡牌上更显眼 */
+.card {
+  color: #fff;
+}
+
+/* 六种颜色对应不同背景色 */
+.grey {
+  background-color: #777; /* 灰色 */
+}
+.yellow {
+  background-color: #ffc107; /* 亮黄色 */
+}
+.blue {
+  background-color: #2196f3; /* 蓝 */
+}
+.green {
+  background-color: #4caf50; /* 绿 */
+}
+.red {
+  background-color: #f44336; /* 红 */
+}
+.purple {
+  background-color: #9c27b0; /* 紫 */
+}
+
+  
+  /* 如果想给 roulette-card 额外标识 */
+  .roulette-card {
+    position: relative;
+    overflow: hidden;
+  }
+  
